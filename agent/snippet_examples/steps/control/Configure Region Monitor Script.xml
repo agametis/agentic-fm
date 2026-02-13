@@ -1,6 +1,27 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Configure Region Monitor Script">
-    <MonitorType value="iBeacon"/>
+    <Text/>
+    <Script id="0" name=""/>
+    <MonitorType value="iBeacon">
+      <RangeName>
+        <Calculation><![CDATA["monitor name"]]></Calculation>
+      </RangeName>
+      <ProximityUUID>
+        <Calculation><![CDATA["BA37611E-FB73-4FFD-8FD3-63459D3FF280"]]></Calculation>
+      </ProximityUUID>
+      <MajorID>
+        <Calculation><![CDATA[10 // 0-65535]]></Calculation>
+      </MajorID>
+      <MinorID>
+        <Calculation><![CDATA[1 // 0-65535]]></Calculation>
+      </MinorID>
+    </MonitorType>
   </Step>
 </fmxmlsnippet>
+<!-- MonitorType value: "iBeacon" | "geofence" | "Clear". Clear stops monitoring the named region. -->
+<!-- iBeacon children: RangeName (required, unique per monitor), ProximityUUID (required), MajorID (optional, 0-65535), MinorID (optional, 0-65535). -->
+<!-- geofence children: RangeName (required, unique per monitor), Latitude (required), Longitude (required), Radius (required, meters, > 0). -->
+<!-- Script parameter (Text element) is optional. -->
+<!-- FileMaker Go only. Up to 20 regions can be monitored at a time. -->
+<!-- See https://help.claris.com/en/pro-help/content/configure-region-monitor-script.html -->

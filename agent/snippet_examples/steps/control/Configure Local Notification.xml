@@ -1,6 +1,47 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Configure Local Notification">
-    <Action value="Queue"/>
+    <Script id="0" name=""/>
+    <Action value="Queue">
+      <Name>
+        <Calculation><![CDATA["notification name"]]></Calculation>
+      </Name>
+      <Delay>
+        <Calculation><![CDATA[30 // Number of seconds]]></Calculation>
+      </Delay>
+      <Title>
+        <Calculation><![CDATA["title"]]></Calculation>
+      </Title>
+      <Body>
+        <Calculation><![CDATA["body"]]></Calculation>
+      </Body>
+      <Button1Label>
+        <Calculation><![CDATA["button 1 label"]]></Calculation>
+      </Button1Label>
+      <Button2Label>
+        <Calculation><![CDATA["button 2 label"]]></Calculation>
+      </Button2Label>
+      <Button3Label>
+        <Calculation><![CDATA["button 3 label"]]></Calculation>
+      </Button3Label>
+      <Button1ForceFgnd>
+        <Calculation><![CDATA[1 // 1 = foreground, 0 = background]]></Calculation>
+      </Button1ForceFgnd>
+      <Button2ForceFgnd>
+        <Calculation><![CDATA[0 // 1 = foreground, 0 = background]]></Calculation>
+      </Button2ForceFgnd>
+      <Button3ForceFgnd>
+        <Calculation><![CDATA[0 // 1 = foreground, 0 = background]]></Calculation>
+      </Button3ForceFgnd>
+      <ShowWhenAppInForeground>
+        <Calculation><![CDATA[0 // 1 = show, 0 = hide. FileMaker Go only.]]></Calculation>
+      </ShowWhenAppInForeground>
+    </Action>
   </Step>
 </fmxmlsnippet>
+<!-- Action value: "Queue" | "Clear". Clear requires only Name. -->
+<!-- Required: Name (unique per notification), Delay (seconds), Title, Body. -->
+<!-- Optional: Button1Label, Button2Label, Button3Label, Button1ForceFgnd, Button2ForceFgnd, Button3ForceFgnd, ShowWhenAppInForeground. -->
+<!-- Script runs when the user interacts with the notification. A multiline parameter is passed: line 1 = name, line 2 = event, line 3 = foreground flag, line 4 = optional script parameter. -->
+<!-- If a new notification shares the name of a queued notification, the previous one is cleared first. -->
+<!-- See https://help.claris.com/en/pro-help/content/configure-local-notification.html -->

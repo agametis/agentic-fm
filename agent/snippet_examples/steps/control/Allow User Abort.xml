@@ -4,3 +4,4 @@
     <Set state="False"/>
   </Step>
 </fmxmlsnippet>
+<!-- Set state: True allows user to abort the script. False prevents user from aborting the script. -->

@@ -12,3 +12,5 @@
     <Text>&lt;unknown&gt;</Text>
   </Step>
 </fmxmlsnippet>
+<!-- NoInteract state: "True" suppresses the associated dialog. "False" shows the dialog. -->
+<!-- See https://help.claris.com/en/pro-help/content/trigger-claris-connect-flow.html -->

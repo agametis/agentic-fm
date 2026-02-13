@@ -1,6 +1,16 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Revert Transaction">
-    <Option state="False"/>
+    <Option state="True"/>
+    <Condition>
+      <Calculation><![CDATA["condition"]]></Calculation>
+    </Condition>
+    <ErrorCode>
+      <Calculation><![CDATA[0]]></Calculation>
+    </ErrorCode>
+    <ErrorMessage>
+      <Calculation><![CDATA["Error message"]]></Calculation>
+    </ErrorMessage>
   </Step>
 </fmxmlsnippet>
+<!-- Condition and ErrorCode and ErrorMessage are optional. -->

@@ -2,6 +2,20 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Perform Script on Server with Callback">
     <CallbackScriptState value="Continue"/>
-    <CallbackScript/>
+    <Calculation><![CDATA[$optional_parameter]]></Calculation>
+    <Script id="0" name=""/>
+    <CallbackScript>
+      <ScriptName id="0" name=""/>
+      <ScriptParameter>
+        <Calculation><![CDATA[$optional_parameter]]></Calculation>
+      </ScriptParameter>
+    </CallbackScript>
   </Step>
 </fmxmlsnippet>
+<!-- CallbackScriptState value: "Continue" | "Halt" | "Exit" | "Resume" | "Pause" -->
+<!-- Required: Script (server-side script to perform). -->
+<!-- Optional: Calculation (parameter for server script), CallbackScript (callback script with its own parameter). -->
+<!-- If CallbackScript is omitted, this step behaves like Perform Script on Server. -->
+<!-- The callback script's parameter Calculation is evaluated when the callback runs on the client, not when the server script starts. Avoid Get(ScriptParameter) and Get(ScriptResult); use constants, global fields, or global variables instead. -->
+<!-- The current file must be hosted on FileMaker Server or FileMaker Cloud. -->
+<!-- See https://help.claris.com/en/pro-help/content/perform-script-on-server-callback.html -->

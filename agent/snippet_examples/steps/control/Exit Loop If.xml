@@ -4,3 +4,5 @@
     <Calculation><![CDATA[True]]></Calculation>
   </Step>
 </fmxmlsnippet>
+<!-- Must appear inside a Loop / End Loop block. -->
+<!-- See https://help.claris.com/en/pro-help/content/exit-loop-if.html -->

@@ -1,4 +1,8 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="0" name="Exit Script"/>
+  <Step enable="True" id="0" name="Exit Script">
+    <Calculation><![CDATA[]]></Calculation>
+  </Step>
 </fmxmlsnippet>
+<!-- The <Calculation> element is optional. If no calculation is used then the <Calculation> element is not used -->
+<!-- See https://help.claris.com/en/pro-help/content/exit-script.html -->

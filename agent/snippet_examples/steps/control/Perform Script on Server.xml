@@ -2,5 +2,14 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Perform Script on Server">
     <WaitForCompletion state="True"/>
+    <Calculation><![CDATA[$optional_parameter]]></Calculation>
+    <Script id="0" name=""/>
   </Step>
 </fmxmlsnippet>
+<!-- WaitForCompletion state: "True" pauses the client until the server script completes (required to capture Get(ScriptResult) or Get(LastError)). "False" continues the client script immediately. -->
+<!-- Required: Script (server-side script to perform). -->
+<!-- Optional: Calculation (parameter for server script). If no parameter is used the Calculation element is omitted. -->
+<!-- The current file must be hosted on FileMaker Server or FileMaker Cloud. -->
+<!-- By name syntax for a script in another file: "DataSourceName::ScriptName" (both are case sensitive). -->
+<!-- Avoid deadlocks or infinite loops when server-side scripts call other server-side scripts (e.g. script A calls script B which calls script A). -->
+<!-- See https://help.claris.com/en/pro-help/content/perform-script-on-server.html -->

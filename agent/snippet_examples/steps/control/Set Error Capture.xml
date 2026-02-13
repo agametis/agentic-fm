@@ -4,3 +4,5 @@
     <Set state="True"/>
   </Step>
 </fmxmlsnippet>
+<!-- Set state: "True" (On) suppresses FileMaker Pro alert messages and some dialog boxes. "False" (Off) reenables the alert messages. -->
+<!-- See https://help.claris.com/en/pro-help/content/set-error-capture.html -->

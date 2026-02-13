@@ -1,4 +1,10 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="0" name="Install OnTimer Script"/>
+  <Step enable="True" id="0" name="Install OnTimer Script">
+    <Interval>
+      <Calculation><![CDATA[10 // Number in seconds]]></Calculation>
+    </Interval>
+    <Script id="1" name="Script Name"/>
+  </Step>
 </fmxmlsnippet>
+<!-- See https://help.claris.com/en/pro-help/content/install-ontimer-script.html -->

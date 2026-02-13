@@ -2,5 +2,10 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Else If">
     <Restore state="False"/>
+    <Calculation><![CDATA[Get ( LastError ) = 401]]></Calculation>
   </Step>
 </fmxmlsnippet>
+<!-- Must follow an If or another Else If step. Cannot follow an Else step. -->
+<!-- Calculation is a Boolean expression. Steps below execute when it evaluates to True. -->
+<!-- Requires a matching End If step (via the parent If block). -->
+<!-- See https://help.claris.com/en/pro-help/content/else-if.html -->

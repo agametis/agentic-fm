@@ -1,4 +1,12 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="0" name="Perform Script"/>
+  <Step enable="True" id="0" name="Perform Script">
+    <Calculation><![CDATA[$parameter]]></Calculation>
+    <Script id="0" name=""/>
+  </Step>
 </fmxmlsnippet>
+<!-- A Perform Script step can be performed by name as follows. This is less reliable than by id -->
+    <!-- <Calculated> -->
+      <!-- <Calculation><![CDATA["Script name here"]]></Calculation> -->
+    <!-- </Calculated> -->
+<!-- See https://help.claris.com/en/pro-help/content/perform-script.html -->

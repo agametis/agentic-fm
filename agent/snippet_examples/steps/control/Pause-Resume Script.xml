@@ -1,6 +1,10 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="0" name="Pause/Resume Script">
-    <PauseTime value="Indefinitely"/>
+  <Step enable="True" id="62" name="Pause/Resume Script">
+    <PauseTime value="ForDuration"/>
+    <Calculation><![CDATA[10]]></Calculation>
   </Step>
 </fmxmlsnippet>
+<!-- PauseTime value: "Indefinitely" | "ForDuration" -->
+<!-- Indefinitely will not use the <Calculation> element -->
+<!-- See https://help.claris.com/en/pro-help/content/pause-resume-script.html -->

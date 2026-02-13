@@ -4,3 +4,6 @@
     <Restore state="False"/>
   </Step>
 </fmxmlsnippet>
+<!-- Restore state: "True" uses stored/specified settings. "False" does not restore stored settings. -->
+<!-- Requires a matching End If step. -->
+<!-- See https://help.claris.com/en/pro-help/content/if-script-step.html -->

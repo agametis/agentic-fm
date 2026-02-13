@@ -1,6 +1,23 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Configure NFC Reading">
-    <Action value="Read"/>
+    <Calculation><![CDATA[$scriptParameter]]></Calculation>
+    <Script id="0" name=""/>
+    <Action value="Read">
+      <Timeout>
+        <Calculation><![CDATA[15]]></Calculation>
+      </Timeout>
+      <ReadMultiple>
+        <Calculation><![CDATA[0]]></Calculation>
+      </ReadMultiple>
+      <JSONOutput>
+        <Calculation><![CDATA[1]]></Calculation>
+      </JSONOutput>
+    </Action>
   </Step>
 </fmxmlsnippet>
+<!-- Action value: "Read" or "Cancel". Cancel cancels a pending Read. -->
+<!-- Timeout: seconds before auto-cancel. Read only. Optional (omit element to skip). -->
+<!-- ReadMultiple: non-zero reads tags continuously. Read only. Optional, default 0. -->
+<!-- JSONOutput: non-zero returns JSON instead of multiline string. Read only.Optional, default 0. -->
+<!-- Script parameter Calculation is optional. -->

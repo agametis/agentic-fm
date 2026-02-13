@@ -1,4 +1,21 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="0" name="Set Variable"/>
+  <Step enable="True" id="0" name="Set Variable">
+    <Value>
+      <Calculation><![CDATA[]]></Calculation>
+    </Value>
+    <Repetition>
+      <Calculation><![CDATA[]]></Calculation>
+    </Repetition>
+    <Name>$varName</Name>
+  </Step>
 </fmxmlsnippet>
+<!-- Required: Name (prefixed with $ for local or $$ for global), Value (calculation). -->
+<!-- Optional: Repetition (index number of the variable, defaults to 1). -->
+<!-- Variable names must NOT: -->
+<!--   contain: + - * / ^ & = ≠ < > ≤ ≥ ( , ; ) [ ] " :: $ } -->
+<!--   contain: AND, OR, XOR, NOT -->
+<!--   begin with a digit or a period -->
+<!--   have the same name as a function, parameter, or keyword -->
+<!-- If no $ or $$ prefix is given in the Name, $ is automatically added. -->
+<!-- See https://help.claris.com/en/pro-help/content/set-variable.html -->

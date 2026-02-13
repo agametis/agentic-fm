@@ -4,3 +4,5 @@
     <Set state="True"/>
   </Step>
 </fmxmlsnippet>
+<!-- Set state: "True" (On) enables animations while a script is running. "False" (Off) disables animations while a script is running. -->
+<!-- See https://help.claris.com/en/pro-help/content/set-layout-object-animation.html -->

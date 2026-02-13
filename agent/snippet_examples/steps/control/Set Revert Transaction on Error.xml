@@ -4,3 +4,6 @@
     <Set state="False"/>
   </Step>
 </fmxmlsnippet>
+<!-- Set state: "True" (On) automatically reverts transactions as soon as certain errors occur. "False" (Off) allows steps within transactions to continue even after certain errors occur. -->
+<!-- Must appear inside an Open Transaction / Commit Transaction block. -->
+<!-- See https://help.claris.com/en/pro-help/content/set-revert-transaction-on-error.html -->

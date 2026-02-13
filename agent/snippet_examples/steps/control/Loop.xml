@@ -5,4 +5,7 @@
     <FlushType value="Always"/>
   </Step>
 </fmxmlsnippet>
-<!-- Requires a matching End Loop step to be present. -->
+<!-- FlushType value: "Always" (default, flush all cached relationships) | "Minimum" (flush only one relationship away) | "Defer" (wait until loop exits to flush). -->
+<!-- Exit via Exit Loop If step or Go to Record/Request/Page with Exit after last option. -->
+<!-- Requires a matching End Loop step. -->
+<!-- See https://help.claris.com/en/pro-help/content/loop.html -->

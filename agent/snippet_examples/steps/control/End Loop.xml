@@ -2,3 +2,5 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="End Loop"/>
 </fmxmlsnippet>
+<!-- Requires a preceding Loop step. -->
+<!-- See https://help.claris.com/en/pro-help/content/end-loop.html -->
