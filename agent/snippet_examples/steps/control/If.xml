@@ -2,6 +2,7 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="If">
     <Restore state="False"/>
+    <Calculation><![CDATA[]]></Calculation>
   </Step>
 </fmxmlsnippet>
 <!-- Restore state: "True" uses stored/specified settings. "False" does not restore stored settings. -->
