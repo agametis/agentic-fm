@@ -1,6 +1,19 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Extend Found Set">
-    <Restore state="False"/>
+    <Restore state="True"/>
+    <Query>
+      <RequestRow operation="Include">
+        <Criteria>
+          <Field table="" id="0" name=""/>
+          <Text>$query</Text>
+        </Criteria>
+      </RequestRow>
+    </Query>
   </Step>
 </fmxmlsnippet>
+<!-- Restore state: "True" uses the stored find requests. "False" does not restore stored requests. -->
+<!-- RequestRow operation: "Include" | "Exclude" (omit matching records) -->
+<!-- Multiple Criteria elements can be added within a RequestRow. Multiple RequestRow elements act as OR conditions. -->
+<!-- Equivalent to a logical OR search: adds matching records from the omitted set to the existing found set. -->
+<!-- See https://help.claris.com/en/pro-help/content/extend-found-set.html -->

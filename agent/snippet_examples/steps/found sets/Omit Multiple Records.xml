@@ -2,5 +2,11 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Omit Multiple Records">
     <NoInteract state="True"/>
+    <Calculation><![CDATA[0 // Number to omit]]></Calculation>
   </Step>
 </fmxmlsnippet>
+<!-- NoInteract state: "True" suppresses the dialog. "False" shows a dialog asking the user for the number of records to omit. -->
+<!-- Optional: Calculation (number of records to omit). If NoInteract is "True" and no number is specified, only the current record is omitted. -->
+<!-- Omits records starting from the current record, then makes the next record in the table the current record. -->
+<!-- If performed from Layout mode, switches to Browse mode. -->
+<!-- See https://help.claris.com/en/pro-help/content/omit-multiple-records.html -->

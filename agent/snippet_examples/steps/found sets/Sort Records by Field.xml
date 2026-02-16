@@ -2,5 +2,10 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Sort Records by Field">
     <SortRecordsByField value="SortAscending"/>
+    <Field table="" id="0" name=""/>
   </Step>
 </fmxmlsnippet>
+<!-- SortRecordsByField value: "SortAscending" (ascending order) | "SortDescending" (descending order) | "SortValueList" (order by associated value list) -->
+<!-- Optional: Field (target field to sort by). If omitted, sorts by the active field when the script runs; displays an error if no active field. -->
+<!-- Sorts based on field context, similar to using the shortcut menu in Table View. -->
+<!-- See https://help.claris.com/en/pro-help/content/sort-records-by-field.html -->

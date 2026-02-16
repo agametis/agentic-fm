@@ -1,7 +1,22 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Constrain Found Set">
-    <Option state="False"/>
-    <Restore state="False"/>
+    <Option state="True"/>
+    <Restore state="True"/>
+    <Query>
+      <RequestRow operation="Include">
+        <Criteria>
+          <Field table="" id="0" name=""/>
+          <Text>$query</Text>
+        </Criteria>
+      </RequestRow>
+    </Query>
   </Step>
 </fmxmlsnippet>
+<!-- Restore state: "True" uses the stored find requests. "False" does not restore stored requests. -->
+<!-- Option state: "True" performs find without indexes (may improve performance when found set is already small). "False" uses indexes. -->
+<!-- RequestRow operation: "Include" | "Exclude" (omit matching records) -->
+<!-- Multiple Criteria elements can be added within a RequestRow. Multiple RequestRow elements act as OR conditions. -->
+<!-- Equivalent to a logical AND search against the existing found set. -->
+<!-- If no records match, returns a found set of zero records. -->
+<!-- See https://help.claris.com/en/pro-help/content/constrain-found-set.html -->

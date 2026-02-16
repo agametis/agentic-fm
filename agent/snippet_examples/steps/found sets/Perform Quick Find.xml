@@ -1,4 +1,10 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="0" name="Perform Quick Find"/>
+  <Step enable="True" id="0" name="Perform Quick Find">
+    <Calculation><![CDATA[$query]]></Calculation>
+  </Step>
 </fmxmlsnippet>
+<!-- Required: Calculation (search text or calculated value). -->
+<!-- Finds records matching one or more search words across fields set up for quick find. -->
+<!-- Use Get(QuickFindText) to pass text from the quick find box to this step. -->
+<!-- See https://help.claris.com/en/pro-help/content/perform-quick-find.html -->

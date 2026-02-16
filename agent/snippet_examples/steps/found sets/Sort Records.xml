@@ -2,6 +2,22 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Sort Records">
     <NoInteract state="True"/>
-    <Restore state="False"/>
+    <Restore state="True"/>
+    <SortList Maintain="True" value="True">
+      <Sort type="Ascending">
+        <PrimaryField>
+          <Field table="" id="0" name=""/>
+        </PrimaryField>
+      </Sort>
+    </SortList>
   </Step>
 </fmxmlsnippet>
+<!-- NoInteract state: "True" suppresses the Sort dialog. "False" shows the dialog allowing users to enter different sort instructions. -->
+<!-- Restore state: "True" uses the stored sort order. "False" uses the most recently performed sort instructions. -->
+<!-- SortList Maintain: "True" keeps records in sorted order (new/changed records move to adjusted position after commit). "False" keeps new/changed records in same position until next find or sort. -->
+<!-- Sort type: "Ascending" | "Descending" | "Custom" (by value list) -->
+<!-- Multiple Sort elements define the sort order priority. -->
+<!-- Each Sort Records step can store a unique sort order; instructions are stored with the step, not the script. -->
+<!-- Invalid sort fields (e.g., from different tables than the active table) are ignored. Repeating fields sort on the first entry only. -->
+<!-- Server-side scripts, Data API, and CWP always run as if NoInteract is "True"; must use Restore to save sort order. -->
+<!-- See https://help.claris.com/en/pro-help/content/sort-records.html -->

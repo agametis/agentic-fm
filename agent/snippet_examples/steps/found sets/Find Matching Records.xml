@@ -2,5 +2,10 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Find Matching Records">
     <FindMatchingRecordsByField value="FindMatchingReplace"/>
+    <Field table="" id="0" name=""/>
   </Step>
 </fmxmlsnippet>
+<!-- FindMatchingRecordsByField value: "FindMatchingReplace" (replace found set) | "FindMatchingConstrain" (logical AND against found set) | "FindMatchingExtend" (logical OR, broaden found set) -->
+<!-- Optional: Field (target field to search by). If omitted, uses the active field; searches selected data or entire field contents. If no active field, displays an error. -->
+<!-- Runs in Browse or Preview mode. Switches to Browse mode if in another mode. -->
+<!-- See https://help.claris.com/en/pro-help/content/find-matching-records.html -->

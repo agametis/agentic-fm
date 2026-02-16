@@ -1,6 +1,21 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="0" name="Perform Find">
-    <Restore state="False"/>
+    <Restore state="True"/>
+    <Query>
+      <RequestRow operation="Include">
+        <Criteria>
+          <Field table="" id="0" name=""/>
+          <Text>$query</Text>
+        </Criteria>
+      </RequestRow>
+    </Query>
   </Step>
 </fmxmlsnippet>
+<!-- Restore state: "True" uses the stored find requests. "False" does not restore stored requests. -->
+<!-- RequestRow operation: "Include" (find records) | "Exclude" (omit records) -->
+<!-- Multiple Criteria elements can be added within a RequestRow. Multiple RequestRow elements act as OR conditions. -->
+<!-- With stored requests: enters Find mode, performs the requests, then enters Browse mode. -->
+<!-- Without stored requests: in Find mode, performs the current requests; in other modes, performs the last executed find request. -->
+<!-- Can follow Enter Find Mode (paused for user input or with Set Field to set criteria) then Perform Find without Restore. -->
+<!-- See https://help.claris.com/en/pro-help/content/perform-find.html -->
