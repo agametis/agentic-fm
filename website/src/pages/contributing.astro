@@ -18,6 +18,20 @@ import CTA from '../components/CTA.astro';
       <h2 id="ways-to-contribute">Ways to Contribute</h2>
 
       <div class="mt-8 grid gap-6 sm:grid-cols-2">
+        <div class="rounded-xl border border-primary-200 bg-primary-50/50 p-6 dark:border-primary-800/50 dark:bg-primary-900/10">
+          <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+            </svg>
+          </div>
+          <h3 class="font-semibold text-zinc-900 dark:text-white">Knowledge Base Articles</h3>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            The more complete the knowledge base, the higher the quality of AI-generated code. Document FileMaker behaviors, nuances, and gotchas that AI commonly gets wrong.
+            Add a Markdown file to <code>agent/docs/knowledge/</code> with a matching entry in <code>MANIFEST.md</code>.
+            Good topics: context switching, transaction scope, server-side compatibility, sort order persistence.
+          </p>
+        </div>
+
         <div class="rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
           <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">

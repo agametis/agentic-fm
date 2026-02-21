@@ -241,6 +241,50 @@ python agent/scripts/clipboard.py read agent/sandbox/output.xml</code></pre>
     <hr class="my-12 border-zinc-200 dark:border-zinc-800" />
 
     <div class="prose-section">
+      <h2 id="knowledge-base">Knowledge Base</h2>
+      <p>
+        <code>agent/docs/knowledge/</code> contains curated behavioral intelligence about FileMaker Pro —
+        nuances, gotchas, and practical insights that go beyond what standard help references cover.
+        While AI handles logic and control flow well, FileMaker has platform-specific behaviors that
+        are easy to get wrong without domain-specific guidance.
+      </p>
+      <p>
+        Each document captures what an experienced FileMaker developer knows intuitively but AI
+        would otherwise miss. AI scans the keyword-indexed manifest at
+        <code>agent/docs/knowledge/MANIFEST.md</code> before composing scripts and reads any
+        matching documents to avoid common pitfalls.
+      </p>
+
+      <div class="mt-6">
+        <h3>Current topics</h3>
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-zinc-200 text-left dark:border-zinc-800">
+                <th class="pb-3 pr-6 font-semibold text-zinc-900 dark:text-white">Document</th>
+                <th class="pb-3 font-semibold text-zinc-900 dark:text-white">Covers</th>
+              </tr>
+            </thead>
+            <tbody class="text-zinc-600 dark:text-zinc-400">
+              <tr>
+                <td class="py-3 pr-6 font-medium text-zinc-900 dark:text-white">found-sets.md</td>
+                <td class="py-3">Found set attributes, actions on found sets, collecting field values, restoring found sets, snapshot links</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p>
+        This is one of the most impactful areas for community contributions. If you know of a
+        FileMaker behavior that AI commonly gets wrong, see the
+        <a href={`${base}contributing`}>Contributing</a> page.
+      </p>
+    </div>
+
+    <hr class="my-12 border-zinc-200 dark:border-zinc-800" />
+
+    <div class="prose-section">
       <h2 id="reference-docs">FileMaker Reference Documentation</h2>
       <p>
         The <code>agent/docs/filemaker/</code> directory contains a script that fetches official FileMaker Pro reference

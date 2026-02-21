@@ -1,25 +1,6 @@
-<?xml version="1.0"?>
-<fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="89" name="# (comment)">
-    <Text>About this script</Text>
-  </Step>
-  <Step enable="True" id="89" name="# (comment)"/>
-  <Step enable="True" id="89" name="# (comment)">
-    <Text>This is a an example script which can be copied from FileMaker in the fmxmlsnippet format.</Text>
-  </Step>
-  <Step enable="True" id="89" name="# (comment)"/>
-  <Step enable="True" id="68" name="If">
-    <Restore state="False"/>
-    <Calculation><![CDATA[$true]]></Calculation>
-  </Step>
-  <Step enable="True" id="89" name="# (comment)">
-    <Text>Do things here.</Text>
-  </Step>
-  <Step enable="True" id="70" name="End If"/>
-  <Step enable="True" id="89" name="# (comment)"/>
-  <Step enable="True" id="89" name="# (comment)">
-    <Text>Using the associated extract_steps.py script will parse the script's steps into individual files.</Text>
-  </Step>
-  <Step enable="True" id="89" name="# (comment)"/>
-  <Step enable="True" id="103" name="Exit Script"/>
-</fmxmlsnippet>
+This is a placeholder file for
+pasting fmxmlsnippet output from FileMaker.
+
+When working in an AI IDE you can simply
+@script.xml to reference this file and
+prompt your desired results.

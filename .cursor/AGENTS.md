@@ -98,6 +98,12 @@ Only fall back to grepping `agent/xml_parsed/` if the needed information is not 
 
 **MANDATORY: All generated FileMaker code — scripts and calculations — MUST follow the conventions in `agent/docs/CODING_CONVENTIONS.md`.** Read that file before writing any calculation logic or script steps. Key areas: variable naming prefixes (`$`, `$$`, `~`), Let() formatting, operator spacing, boolean values, and control structure style.
 
+# Knowledge base
+
+`agent/docs/knowledge/` contains curated behavioral intelligence about FileMaker — nuances, gotchas, and practical insights that go beyond what the standard help references cover. These documents help avoid common pitfalls when composing scripts.
+
+Before writing a script, scan `agent/docs/knowledge/MANIFEST.md` for keyword matches against the current task. If any entry matches, read the corresponding document and apply its insights during script composition.
+
 # Script creation
 
 **MANDATORY: Before writing ANY script step, you MUST:**

@@ -97,6 +97,11 @@ agentic-fm/
 │   ├── sandbox/             # Work area for AI-generated scripts (output)
 │   ├── scripts/             # Utility scripts (validation, XML conversion, clipboard)
 │   ├── snippet_examples/    # Canonical fmxmlsnippet templates for every step type
+│   ├── docs/
+│   │   ├── filemaker/       # FileMaker help reference (functions, script steps, errors)
+│   │   ├── mbs/             # MBS Plugin reference documentation
+│   │   └── knowledge/       # Curated behavioral intelligence about FileMaker
+│   ├── library/             # Proven, reusable fmxmlsnippet patterns
 │   └── xml_parsed/          # Exploded XML from the current solution (reference only)
 └── xml_exports/             # Versioned XML exports organized by solution
     └── <Solution Name>/
@@ -123,6 +128,22 @@ All AI-generated FileMaker code (scripts and calculations) follows the conventio
 - Adding project-specific prefixes or naming patterns
 - Specifying preferred patterns for error handling or transaction structure
 - Documenting custom functions that should always be used instead of inline logic
+
+# Knowledge Base
+
+`agent/docs/knowledge/` contains curated behavioral intelligence about FileMaker Pro — nuances, gotchas, and practical insights that go beyond what standard help references cover. While AI is good at logic and control flow, FileMaker has platform-specific behaviors (found set mechanics, context switching, transaction scope, window management) that are easy to get wrong without domain-specific guidance.
+
+Each knowledge document captures what an experienced FileMaker developer knows intuitively but AI would otherwise miss. AI consults these documents before composing scripts, leading to higher-quality output that avoids common pitfalls.
+
+**Current topics:**
+
+| Document | Covers |
+| --- | --- |
+| `found-sets.md` | Found set attributes, actions on found sets, collecting field values, restoring found sets, snapshot links |
+
+A keyword-indexed manifest at `agent/docs/knowledge/MANIFEST.md` enables fast lookup. AI scans it for keyword matches against the current task and reads any matching documents before writing script steps.
+
+**Contributing knowledge:** This is one of the most impactful ways to contribute. If you know of a FileMaker behavior that AI commonly gets wrong — or a nuance that would help AI write better scripts — see the [Contributing](#contributions) section below.
 
 # 📋 FileMaker Companion Scripts
 
@@ -295,6 +316,7 @@ npm run dev
 
 Contributions are welcome. This project is intended to grow through collaboration with the FileMaker developer community.
 
+- **Knowledge base articles** -- The more complete the knowledge base is, the higher the quality of AI-generated code. If you know of a FileMaker behavior, nuance, or gotcha that AI commonly gets wrong, write it up as a Markdown file and add it to `agent/docs/knowledge/`. Use lowercase-kebab-case filenames (e.g., `record-locking.md`, `window-management.md`) and add an entry to `agent/docs/knowledge/MANIFEST.md`. Good candidates include context switching, transaction scope, server-side vs. client-side compatibility, sort order persistence, and any platform-specific behavior that isn't obvious from the help files alone.
 - **Bug reports and corrections** -- If you find an error, an omission, or a snippet that produces incorrect output, please open an issue.
 - **Updated snippet examples** -- Additional and/or updated `fmxmlsnippet` templates for step types not yet covered are among the most valuable contributions.
 - **Editor and workflow support** -- The core toolchain should be editor-agnostic. It was developed using Cursor. If you build support for a specific editor, IDE, or automation workflow, a pull request is welcome.
