@@ -54,13 +54,14 @@ See **[filemaker/README.md](filemaker/README.md)** for the full dependency list 
 
 # Agent Skills
 
-Skills are opt-in workflows that extend the AI's default behavior. Invoke them naturally in conversation — no special syntax required.
+Skills are opt-in workflows that extend an agent's default behavior. Invoke them naturally in conversation — no special syntax required.
 
-| Skill              | What it does                                                                                                                                                                             | Example triggers                                                                         |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **script-preview** | Generates a human-readable, numbered step outline of a proposed script for review and iteration before any XML is generated. Loops until you approve, then hands off to full generation. | "preview the script", "outline the steps", "draft the logic before you generate"         |
-| **script-review**  | Performs a code review of an existing script — evaluating logic flow, efficiency, and correctness. Interactive; works alongside the FileMaker debugger.                                  | "review this script", "check the logic in X script"                                      |
-| **library-lookup** | Searches the curated snippet library for reusable fmxmlsnippet code matching the current task. Used proactively by AI before writing significant logic, and on direct request.           | "use the HTTP request script", "add a timeout loop", "is there a library item for this?" |
+| Skill              | What it does                                                                                                                                                                                                          | Example triggers                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **script-lookup**  | Locates a specific script in the parsed XML export by ID or name, resolving the matched pair of human-readable (`scripts_sanitized`) and Save-As-XML (SaXML) (`scripts`) files. Confirms the match before proceeding. | "review script ID 123", "show me the invoice script", "open the New Invoice script"      |
+| **script-preview** | Generates a human-readable, numbered step outline of a proposed script for review and iteration before any XML is generated. Loops until you approve, then hands off to full generation.                              | "preview the script", "outline the steps", "draft the logic before you generate"         |
+| **script-review**  | Performs a code review of an existing script — evaluating logic flow, efficiency, and correctness. Interactive; works alongside the FileMaker debugger.                                                               | "review this script", "check the logic in X script"                                      |
+| **library-lookup** | Searches the curated snippet library for reusable fmxmlsnippet code matching the current task. Used proactively by AI before writing significant logic, and on direct request.                                        | "use the HTTP request script", "add a timeout loop", "is there a library item for this?" |
 
 # Objectives
 
