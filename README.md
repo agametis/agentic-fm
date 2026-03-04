@@ -2,6 +2,10 @@
 
 AI-powered script development for FileMaker Pro. Generate, modify, and validate `fmxmlsnippet` code that pastes directly into FileMaker with a high degree of confidence.
 
+Visual introduction over at the website [agentic-fm.com](https://agentic-fm.com)
+
+If you're a developer, and wanting join the conversation, we've got a [Discord server](https://discord.gg/zHBETxqT) too.
+
 # Background
 
 FileMaker Pro is a closed environment — logic and schema live inside a binary file, not text files. Three XML formats provide the bridge between FileMaker and external tooling:
