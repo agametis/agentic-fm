@@ -13,6 +13,8 @@ Your normal rule is:
 - always fetch changes from `upstream`
 - always publish your integrated result to `origin`
 
+The one-time upstream-base reconciliation has already been completed in this repository. That means your `main` branch is now the normal working branch and is already based on the restored upstream history plus your custom changes.
+
 Recommended aliases:
 
 ```bash
@@ -69,10 +71,30 @@ git push --force-with-lease origin main
 ### Important notes
 
 - `main` is your working branch and should always contain your version of the project.
+- Stay on `main` for normal day-to-day work.
+- Only create a temporary branch from `main` if you want to isolate a new feature or risky change before merging it back.
 - `upstream/main` is only the source for incoming updates from the original project.
 - After every successful upstream integration, `origin/main` becomes your new canonical version.
 - Use `--force-with-lease` after rebasing. Do not use plain `--force`.
 - If you want to inspect what changed before pushing, run `git lg` or `git diff --stat upstream/main...main`.
+
+### Normal branch usage
+
+For normal work, stay on `main`:
+
+```bash
+git checkout main
+```
+
+If you want to do isolated work, branch from `main` and merge or rebase it back later:
+
+```bash
+git checkout -b my-feature
+# work and commit
+git checkout main
+git merge my-feature
+git branch -d my-feature
+```
 
 ## Prepare the FileMaker data Python environment and download the FileMaker documentation.
 
