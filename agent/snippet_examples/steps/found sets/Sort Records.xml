@@ -17,9 +17,6 @@
 <!-- SortList Maintain: "True" keeps records in sorted order (new/changed records move to adjusted position after commit). "False" keeps new/changed records in same position until next find or sort. -->
 <!-- Sort type: "Ascending" | "Descending" | "Custom" (by value list) -->
 <!-- Multiple Sort elements define the sort order priority. -->
-<!-- Optional: SummaryField/Field inside Sort — specifies a summary field to sort by when using a summary field as the sort key. -->
-<!-- Optional: ValueList inside Sort — required when Sort type="Custom"; specifies the value list to sort by (id and name attributes). -->
-<!-- Optional: OverrideLanguage inside Sort — overrides the language used for sorting. Attribute: language="<value>" (see language-enums.md for all values). Confirmed values include: "Italian", "English", "French", "German", "Spanish", "Japanese", "Unicode", "Default". -->
 <!-- Each Sort Records step can store a unique sort order; instructions are stored with the step, not the script. -->
 <!-- Invalid sort fields (e.g., from different tables than the active table) are ignored. Repeating fields sort on the first entry only. -->
 <!-- Server-side scripts, Data API, and CWP always run as if NoInteract is "True"; must use Restore to save sort order. -->

@@ -5,15 +5,15 @@
     <ObjectName>
       <Calculation><![CDATA[$object]]></Calculation>
     </ObjectName>
-    <URL custom="True">
+    <URL custom="False">
       <Calculation><![CDATA[$url]]></Calculation>
     </URL>
   </Step>
 </fmxmlsnippet>
 <!-- Action enumeration: "GoToURL" loads new web address in web viewer; "Reset" resets web viewer to original web address and clears Back/Forward history; "Reload" reloads current webpage; "GoForward" goes forward one page (like web browser); "GoBack" goes back one page (like web browser). -->
-<!-- URL custom attribute: "True" uses custom calculation. Omit the URL element entirely for Reset, Reload, GoForward, and GoBack actions. -->
+<!-- URL custom attribute: "False" uses predefined URL; "True" uses custom calculation. -->
 <!-- Required: ObjectName (name of web viewer to act upon), Action. -->
-<!-- Optional: URL (only used when Action is "GoToURL"; omit for all other actions). -->
+<!-- Optional: URL (for GoToURL action; calculation specifying new web address). -->
 <!-- Works only for named web viewer objects. ObjectName can be typed or calculated. -->
 <!-- Cannot change web viewer settings via script (interaction, progress bar, status messages, Find mode display, automatic URL encoding); these settings only available in Layout mode. -->
 <!-- For GoToURL: can send HTML data to web viewer using data URL scheme format: data:[<mediatype>][;base64],<data> (see documentation for full syntax details). -->

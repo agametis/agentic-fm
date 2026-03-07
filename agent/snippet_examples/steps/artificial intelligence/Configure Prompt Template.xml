@@ -3,22 +3,8 @@
   <Step enable="True" id="226" name="Configure Prompt Template">
     <Option state="False"/>
     <ConfigurePromptTemplate>
-      <TemplateName>
-        <Calculation><![CDATA["template_name"]]></Calculation>
-      </TemplateName>
-      <ModelProvider>Custom</ModelProvider>
+      <ModelProvider>ChatGPT</ModelProvider>
       <RequestType>SQLQuery</RequestType>
-      <SQLPrompt>
-        <Calculation><![CDATA["prompt"]]></Calculation>
-      </SQLPrompt>
     </ConfigurePromptTemplate>
   </Step>
 </fmxmlsnippet>
-<!-- ModelProvider: "ChatGPT" (HR: OpenAI) | "Anthropic" | "Cohere" | "Custom". Custom allows custom prompt text. -->
-<!-- RequestType: "SQLQuery" (HR: SQL Query) | "FindRequest" (HR: Find Request) | "RAGPrompt" (HR: RAG Prompt). -->
-<!-- All child params are inside <ConfigurePromptTemplate>. -->
-<!-- For SQLQuery + Custom: SQLPrompt calc, optional NaturalLanguagePrompt calc. -->
-<!-- For FindRequest + Custom: FindRequestPrompt calc. -->
-<!-- For RAGPrompt + Custom: RAGPPrompt calc. Note: XML element has typo "RAGPPrompt" (extra P). This is canonical. -->
-<!-- Option state="True" when NaturalLanguagePrompt is present (enables natural language response for SQL queries). -->
-<!-- Non-Custom providers use built-in prompts; prompt calc elements are omitted. -->

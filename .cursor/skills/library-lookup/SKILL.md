@@ -5,38 +5,45 @@ description: Look up and integrate reusable code from the curated snippet librar
 
 # Library Lookup
 
-The library is a curated collection of reusable fmxmlsnippet code. The full manifest — including file paths, descriptions, and keyword tags — lives at:
+The library is a curated collection of reusable fmxmlsnippet code.
 
-```
-agent/library/MANIFEST.md
-```
+## Must Rules
 
----
+1. Use DuckDB-backed retrieval first when library metadata is indexed.
+2. Read only matched library files; do not bulk-read the library directory.
+3. If manifest is missing/outdated, rebuild it before relying on library matches.
+4. Keep output in valid fmxmlsnippet form when returning reusable steps.
 
-## Using the library
+## Primary source
 
-**Step 1 — Read the manifest.**
-Always read `agent/library/MANIFEST.md` first. It is the filter; do not browse the library folder directly.
+- `agent/library/MANIFEST.md` is the canonical library catalog.
+- Use DuckDB search for manifest-style lookup if available.
 
-**Step 2 — Match keywords to the task.**
-Scan the manifest's keyword column against the current task. If any entry matches, proceed to step 3. If nothing matches, skip the library entirely.
+## Deterministic Workflow
 
-**Step 3 — Read only matching files.**
-Use the Read tool to open the specific file(s) identified in step 2. Each file path in the manifest is relative to `agent/library/` and includes the `.xml` extension.
+1. Ensure library indexability:
+- Verify `agent/library/MANIFEST.md` exists.
+- If missing or stale, regenerate it before lookup.
 
-**Step 4 — Adapt and integrate.**
+2. Find candidates:
+- Ensure session first (`npm run duckdb:session:status`, then `npm run duckdb:session:start` if needed, `npm run duckdb:session:refresh` if stale).
+- DuckDB first (when available) using task keywords.
+- Fallback: direct manifest keyword scan.
+
+3. Read only matched snippet files listed in the manifest.
+
+4. Adapt and integrate:
 - Replace placeholder field/table/ID references with values from CONTEXT.json.
 - Adjust placeholder variable names to match the current script's conventions.
 - Keep structural and purpose comments; remove or update comments that describe the template itself.
 - When incorporating a library Script item, extract the inner `<Step>` elements only — do not include the enclosing `<Script>` wrapper unless explicitly requested. Output remains in `<fmxmlsnippet type="FMObjectList">` format.
 
-**On direct developer reference** — when a developer names or quotes a library item (e.g. "use the HTTP request script", "add the timeout loop", "include a spinner"), read the manifest to locate it, then read and output that file.
-
----
+5. On direct developer reference:
+- If the user names a library item, resolve that item first from manifest/index.
 
 ## Updating the manifest
 
-The manifest is maintained separately from the skill so it reflects the actual contents of the library folder at any time. Two approaches:
+Manifest upkeep options:
 
 ### Ask AI to regenerate
 
@@ -55,3 +62,11 @@ Open `agent/library/MANIFEST.md` and add or remove rows directly. Follow the exi
 ```
 
 Keep keywords concrete and drawn from how a developer would describe the need — not from the file name itself.
+
+## Fallback behavior
+
+If DuckDB retrieval is unavailable:
+
+1. Use manifest-only lookup.
+2. Read only matched files.
+3. Return adapted snippets with the same output rules.

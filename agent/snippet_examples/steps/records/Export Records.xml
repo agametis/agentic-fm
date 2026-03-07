@@ -17,19 +17,15 @@
         <Field table="" id="0" name=""/>
       </ExportEntry>
     </ExportEntries>
-    <SummaryFields>
-      <Field GroupByFieldIsSelected="True" table="" id="0" name=""/>
-    </SummaryFields>
   </Step>
 </fmxmlsnippet>
-<!-- NoInteract state: "True" suppresses dialogs (HR: With dialog: Off). "False" shows dialogs (HR: With dialog: On). -->
-<!-- CreateDirectories state: "True" creates folders (HR: Create folders: On). "False" does not (HR: Create folders: Off). -->
-<!-- Restore state: "True" uses stored export order. "False" does not. Not shown in HR. -->
-<!-- AutoOpen state: "True" opens file after saving (HR: Automatically open shown). "False" does not (HR: omitted). -->
-<!-- CreateEmail state: "True" creates email with attachment (HR: Create email shown). "False" does not (HR: omitted). -->
-<!-- Profile DataType: "TABS" (Tab-Separated Values) | "COMS" (Comma-Separated Values) | "DBF " (dBASE) | "MRGE" (Merge) | "HTML" (HTML Table) | "FMPR" (FileMaker Pro) | "XML " (XML) | "XLSX" (Excel .xlsx). See shared-enums.md for full details. -->
-<!-- ExportOptions: FormatUsingCurrentLayout "True"/"False" (checkbox: Apply current layout's data formatting). CharacterSet: see shared-enums.md for HR labels. -->
-<!-- SummaryFields: optional group-by fields with GroupByFieldIsSelected="True" attribute. Dialog-managed. -->
+<!-- NoInteract state: "True" suppresses dialog boxes (export criteria and output file selection). "False" displays dialog boxes letting user set new export criteria. -->
+<!-- CreateDirectories state: "True" creates new folders specified in output file path. "False" does not create folders. -->
+<!-- Restore state: "True" uses export order that was in effect when script step was added. "False" does not restore stored export order. -->
+<!-- AutoOpen state: "True" automatically opens the file after saving. "False" does not open file. -->
+<!-- CreateEmail state: "True" creates email with file as attachment after saving. "False" does not create email. -->
+<!-- Profile attributes: FieldDelimiter (delimiter character; &#9; is tab), IsPredefined ("-1" for yes, other for no), FieldNameRow ("-1" includes field names as first row), DataType (export format: "TABS", "CSV", "MERGE", "DBF", "WK1", "BASIC", "DIF", "SYLK", "HTML", "XML", "XLSX", ".fp7", ".fmp12"). -->
+<!-- ExportOptions attributes: FormatUsingCurrentLayout ("True" applies current layout's data formatting to exported data; "False" uses last exported data formatting), CharacterSet (output file character set: "UTF-8", "UTF-16", "Windows", "DOS", "Macintosh", "ISO-8859-1", etc.). -->
 <!-- Required: UniversalPathList (output file path; can specify multiple paths one per line; FileMaker Pro uses first path it locates). -->
 <!-- Optional: NoInteract, CreateDirectories, Restore (specify export order), Profile (export format and options), ExportOptions, AutoOpen, CreateEmail, ExportEntries (fields to export with order). -->
 <!-- Exports records to specified file. Exports all records currently being browsed. To limit records, use find request before Export Records. -->

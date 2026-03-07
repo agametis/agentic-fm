@@ -5,6 +5,5 @@
     <Field table="" id="0" name=""/>
   </Step>
 </fmxmlsnippet>
-<!-- SelectAll state: "True" selects all contents before copying (HR: Select shown). "False" copies current selection (HR: Select omitted). -->
 <!-- The <Field> element is optional. If not specified, then the current field is used if in focus. -->
 <!-- See https://help.claris.com/en/pro-help/content/copy.html -->

@@ -2,10 +2,10 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="130" name="Set Selection">
     <StartPosition>
-      <Calculation><![CDATA[100]]></Calculation>
+      <Calculation><![CDATA[1 // Start position]]></Calculation>
     </StartPosition>
     <EndPosition>
-      <Calculation><![CDATA[300]]></Calculation>
+      <Calculation><![CDATA[10 // End position]]></Calculation>
     </EndPosition>
     <Field table="" id="0" name=""/>
   </Step>

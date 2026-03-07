@@ -4,26 +4,31 @@
     <LimitToWindowsOfCurrentFile state="True"/>
     <Window value="ByName"/>
     <Name>
-      <Calculation><![CDATA["window name"]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </Name>
     <Height>
-      <Calculation><![CDATA[400 // Pixels]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </Height>
     <Width>
-      <Calculation><![CDATA[600 // Pixels]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </Width>
     <DistanceFromTop>
-      <Calculation><![CDATA[100 // Pixels from top of screen]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </DistanceFromTop>
     <DistanceFromLeft>
-      <Calculation><![CDATA[100 // Pixels from left of screen]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </DistanceFromLeft>
   </Step>
 </fmxmlsnippet>
-<!-- Window value: "ByName" | "Current". "Current" selects the foreground window; omit Name when using Current. -->
-<!-- LimitToWindowsOfCurrentFile state: "True" restricts to current file. "False" matches all open FileMaker files. HR label: "Current file". -->
-<!-- HR label for DistanceFromTop: "Top". HR label for DistanceFromLeft: "Left". -->
-<!-- Optional: Name, Height, Width, DistanceFromTop, DistanceFromLeft. Omitted dimension/position values default to the window's current values. -->
-<!-- Minimum height/width depend on the OS. Maximum height/width depend on screen resolution. -->
-<!-- Supported on Pro. Partial support on Go (cards only) and WebDirect (cards only). Not supported on Server, Cloud, Data API, or CWP. -->
+<!-- LimitToWindowsOfCurrentFile state: "True" restricts matches to current file (Current file only option). "False" matches all available FileMaker Pro files. -->
+<!-- Window enumeration: "ByName" selects open window by name (not case-sensitive); "Current" selects current foreground window when script step is performed. -->
+<!-- Adjusts size or location of chosen window. Adjusted window maintains same layout, table, found set, and current record as original window. -->
+<!-- Not necessary to enter values for each option. When no value entered, FileMaker Pro uses original location and size of window as default values. -->
+<!-- Minimum window height and width depend on script user's operating system. If specified values less than minimum, FileMaker Pro uses minimum values. -->
+<!-- Maximum window height and width depend on script user's screen resolution. If specified values greater than maximum, FileMaker Pro uses maximum value possible. -->
+<!-- In FileMaker Pro: can move window offscreen by supplying negative top, left, or both values (useful for multiple-monitor environments). -->
+<!-- FileMaker Go: supported only for cards; card's height and width cannot exceed screen size; if card larger than screen size, top position value set to 0. -->
+<!-- WebDirect: supported only for cards; if card larger than browser window size, top and left position values set to (0, 0); card's top and left position values will not be negative if not specified; ensure card's size doesn't exceed browser window size (any portion extending past right or bottom edge of browser window is clipped). -->
+<!-- macOS: has no effect on full-screen window and returns error code. -->
+<!-- Partial support on Go (cards only; size limitations) and WebDirect (cards only; position/size limitations). Not supported on Server, Cloud, Data API, or CWP. -->
 <!-- See https://help.claris.com/en/pro-help/content/move-resize-window.html -->

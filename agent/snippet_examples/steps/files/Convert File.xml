@@ -8,20 +8,15 @@
     <DataSourceType value="File"/>
     <Profile FieldDelimiter="&#9;" IsPredefined="-1" FieldNameRow="-1" DataType="    "/>
     <UniversalPathList>$path</UniversalPathList>
-    <ImportOptions TargetTableName="Table" CharacterSet="Macintosh" PreserveContainer="False" MatchFieldNames="False" AutoEnter="False" SplitRepetitions="False" method="Add"/>
+    <ImportOptions TargetTableName="Table" CharacterSet="UTF-8" PreserveContainer="False" MatchFieldNames="False" AutoEnter="False" SplitRepetitions="False" method="Add"/>
   </Step>
 </fmxmlsnippet>
-<!-- NoInteract state: "True" suppresses dialogs (HR: With dialog: Off). "False" shows dialogs (HR: With dialog: On). Inverted in HR. -->
-<!-- Option state: "False" in all known examples. HR always shows "Open File". -->
-<!-- SkipIndexes state: "True" skips index creation (HR: Skip Indexes shown). "False" creates indexes (HR: Skip Indexes omitted). -->
-<!-- VerifySSLCertificates state: "True" verifies SSL (HR: Verify SSL Certificates shown). "False" skips (HR: omitted). -->
-<!-- DataSourceType value: "File" (file path) | "XMLSource" (XML with stylesheet). -->
-<!-- UniversalPathList: source file path. Supports $variable, file:, filemac:, filewin:, fmnet: formats. If omitted, Open File dialog is shown. -->
-<!-- Profile element varies by DataSourceType and source method: -->
-<!--   File type: <Profile FieldDelimiter="&#9;" IsPredefined="-1" FieldNameRow="-1" DataType="    "/> -->
-<!--   XMLSource HTTP: XMLType="XMLHttp" XSLType="XSLHttp" with <XMLHttp> and <XSLHttp> children containing URLs. -->
-<!--   XMLSource File: XMLType="XMLFile" XSLType="XSLFile" with <XMLFile> and <XSLFile> children containing $variable paths. -->
-<!--   XMLSource Calc: XMLType="XMLCalculation" XSLType="XSLCalculation" with <XMLCalc><Calculation/></XMLCalc> and <XSLCalc><Calculation/></XSLCalc> children. -->
-<!-- ImportOptions: dialog-configured element with TargetTableName, CharacterSet, PreserveContainer, MatchFieldNames, AutoEnter, SplitRepetitions, method attributes. -->
+<!-- NoInteract state: "True" suppresses conversion dialogs (uses default settings). "False" shows the dialogs. -->
+<!-- Option state: "True" opens the converted file after conversion. "False" does not. -->
+<!-- SkipIndexes state: "True" skips index creation in the converted file. "False" creates indexes. -->
+<!-- VerifySSLCertificates state: "True" verifies SSL certificate for HTTP/XML data sources. "False" skips verification. -->
+<!-- DataSourceType value: "File" | "XMLData" (HTTP source) -->
+<!-- Optional: UniversalPathList (source file path). If omitted, the Open File dialog is shown. -->
 <!-- FileMaker Pro only; not supported on Go, WebDirect, Server, Cloud, Data API, or CWP. -->
+<!-- Cannot convert the contents of a folder; each file must be converted separately. -->
 <!-- See https://help.claris.com/en/pro-help/content/convert-file.html -->

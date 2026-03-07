@@ -3,7 +3,7 @@
   <Step enable="True" id="111" name="Open URL">
     <NoInteract state="True"/>
     <Option state="True"/>
-    <Calculation><![CDATA["https://example.com/"]]></Calculation>
+    <Calculation><![CDATA[]]></Calculation>
   </Step>
 </fmxmlsnippet>
 <!-- NoInteract state: "True" suppresses the Open URL Options dialog. "False" shows the dialog. -->

@@ -2,14 +2,15 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="67" name="Perform AppleScript">
     <ContentType value="Calculation"/>
-    <Calculation><![CDATA["tell application \"Notes\" to open"]]></Calculation>
+    <Calculation><![CDATA[]]></Calculation>
   </Step>
 </fmxmlsnippet>
-<!-- ContentType value: "Calculation" | "Text". -->
-<!-- "Calculation": uses <Calculation> CDATA; compiled each time the step executes. -->
-<!-- "Text": uses <Text>literal AppleScript</Text> instead of <Calculation>; compiled once when authored; up to 30,000 characters; indenting not supported. -->
-<!-- Required: ContentType. Either Calculation or Text must be present depending on ContentType. -->
+<!-- ContentType enumeration: "Calculation" uses calculated AppleScript; "Native" uses direct AppleScript text (up to 30000 characters, indenting not supported). -->
+<!-- Required: ContentType, Calculation (contains AppleScript text or calculation). -->
+<!-- Native AppleScript is compiled once when typed (detects scripting/system errors). Calculated AppleScript is compiled each time the step executes. -->
 <!-- To receive Apple events, privilege set must have fmextscriptaccess extended privilege enabled. -->
-<!-- macOS only. On Windows, step is ignored and generates a capturable error code. -->
+<!-- Can pass image data between FileMaker Pro container fields and other applications. -->
+<!-- Can communicate with applets and scriptable applications (e.g., tell application "My Applet" to doMyRoutine()). -->
+<!-- macOS only. On Windows, step is ignored and generates error code (capturable with Get(LastError)). -->
 <!-- Not supported on Go, WebDirect, Server, Cloud, Data API, or CWP. -->
 <!-- See https://help.claris.com/en/pro-help/content/perform-applescript-os-x.html -->

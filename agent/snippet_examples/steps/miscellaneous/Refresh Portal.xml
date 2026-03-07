@@ -2,7 +2,7 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="180" name="Refresh Portal">
     <ObjectName>
-      <Calculation><![CDATA[$object]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </ObjectName>
   </Step>
 </fmxmlsnippet>

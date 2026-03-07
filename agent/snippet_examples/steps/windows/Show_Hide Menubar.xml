@@ -5,6 +5,5 @@
     <ShowHide value="Hide"/>
   </Step>
 </fmxmlsnippet>
-<!-- Lock state: "True" prevents users from showing or hiding the menu bar. "False" allows users to change it. -->
 <!-- ShowHide value: "Show" | "Hide" | "Toggle" -->
 <!-- See https://help.claris.com/en/pro-help/content/show-hide-menubar.html -->

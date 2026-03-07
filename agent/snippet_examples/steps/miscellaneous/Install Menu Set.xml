@@ -1,15 +1,11 @@
 <?xml version="1.0"?>
 <fmxmlsnippet type="FMObjectList">
-  <Step enable="True" id="142" name="Install Menu Set">
+  <Step enable="True" id="0" name="Install Menu Set">
     <UseAsFileDefault state="False"/>
-    <CustomMenuSet id="1" name="[Standard FileMaker Menus]"/>
+    <CustomMenuSet id="0" name=""/>
   </Step>
 </fmxmlsnippet>
-<!-- HR: Install Menu Set [ "[Standard FileMaker Menus]" ; Use as file default: Off ] -->
-<!-- HR: Install Menu Set [ "[Standard FileMaker Menus]" ; Use as file default: On ]  → UseAsFileDefault state="True" -->
-<!-- HR: Install Menu Set [ "[File Default]" ]  → CustomMenuSet id="0" name="" (resets to file default; UseAsFileDefault not shown in HR) -->
-<!-- HR: Install Menu Set [ "Custom Menu" ; Use as file default: Off ]  → CustomMenuSet id="<id>" name="Custom Menu" -->
-<!-- UseAsFileDefault state: "True" = On (sets installed menu set as the file default); "False" = Off (installs for current window only). -->
-<!-- [Standard FileMaker Menus] is a built-in menu set (id="1"). [File Default] uses name="" to reset to the file's default menu set. -->
+<!-- UseAsFileDefault state: "True" overrides the file's default menu set (until the file is closed). "False" does not override the file default. -->
+<!-- Required: CustomMenuSet (menu set to install). -->
 <!-- FileMaker Pro and Go only; not supported on WebDirect, Server, Cloud, Data API, or CWP. -->
 <!-- See https://help.claris.com/en/pro-help/content/install-menu-set.html -->

@@ -8,7 +8,7 @@
     <UniversalPathList>$path</UniversalPathList>
   </Step>
 </fmxmlsnippet>
-<!-- SaveAsType value: "Copy" (copy of current file) | "CompactedCopy" (compacted copy, smaller) | "Clone" (no records) | "SelfContainedCopy" (self-contained single file) -->
+<!-- SaveAsType value: "Copy" (complete copy) | "Clone" (no records) | "Compacted" (compacted copy) | "SelfContained" (single file with embedded container content) -->
 <!-- CreateDirectories state: "True" creates folders in the output path if they don't exist. "False" does not. -->
 <!-- AutoOpen state: "True" opens the output file with the default application. "False" does not. -->
 <!-- CreateEmail state: "True" creates a new email with the file as attachment. "False" does not. -->

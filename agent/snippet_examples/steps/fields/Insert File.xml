@@ -16,9 +16,9 @@
 </fmxmlsnippet>
 <!-- UniversalPathList type: "Embedded" (embeds the file) | "Reference" (stores only a link to the file). -->
 <!-- DialogOptions enable: "True" shows custom Insert File dialog. "False" suppresses dialog. -->
-<!-- DialogOptions asFile: "True" stores as file icon. "False" displays content when possible (HR: "Display content"). -->
-<!-- Storage type: "UserChoice" (default, no HR label) | "InsertOnly" (HR: "Insert") | "ReferenceOnly" (HR: "Reference") | "InsertAndReference" -->
-<!-- Compress type: "UserChoice" (default, no HR label) | "WhenPossible" (HR: "Compress when possible") | "Never" (HR: "Never compress") -->
+<!-- DialogOptions asFile: "True" stores as a file (icon display). "False" displays content when possible. -->
+<!-- Storage type: "InsertOnly" | "ReferenceOnly" | "InsertAndReference" -->
+<!-- Compress type: "WhenPossible" | "Never" -->
 <!-- Target: Field element uses <Field table="" id="0" name=""/> for a container field, or <Field>$variable</Field> for a variable. -->
 <!-- Optional: UniversalPathList (source file path; if omitted, user is prompted), DialogOptions, Target. If Target is omitted, the active container field is used; returns an error if no active container field. -->
 <!-- If targeting a variable that does not exist, this step creates it. -->

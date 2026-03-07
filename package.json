@@ -1,0 +1,33 @@
+{
+  "name": "agentic-fm-with-duckdb-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js ESM tooling for in-memory DuckDB indexing/search in agentic-fm (no external CLI dependency)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agametis/agentic-fm-with-duckdb-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/agametis/agentic-fm-with-duckdb-tools/issues"
+  },
+  "homepage": "https://github.com/agametis/agentic-fm-with-duckdb-tools#readme",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "duckdb": "^1.4.4"
+  },
+  "scripts": {
+    "duckdb:session:start": "node duckdb/main.mjs session start",
+    "duckdb:session:status": "node duckdb/main.mjs session status",
+    "duckdb:session:refresh": "node duckdb/main.mjs session refresh",
+    "duckdb:session:stop": "node duckdb/main.mjs session stop",
+    "duckdb:index": "node duckdb/main.mjs session refresh",
+    "duckdb:search": "node duckdb/main.mjs search",
+    "duckdb:script:explain": "node duckdb/main.mjs script-explain",
+    "duckdb:script:where-used": "node duckdb/main.mjs script-where-used",
+    "duckdb:script:calls": "node duckdb/main.mjs script-calls",
+    "duckdb:sql": "node duckdb/main.mjs sql"
+  }
+}

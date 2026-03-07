@@ -7,9 +7,4 @@
     <Restore state="False"/>
   </Step>
 </fmxmlsnippet>
-<!-- SkipAutoEntry state: "True" shows "Skip auto-enter options" in HR. "False" omits it. -->
-<!-- Option state: "True" shows "Skip data entry validation" in HR. "False" omits it. -->
-<!-- ESSForceCommit state: "True" shows "Override ESS locking conflicts" in HR. "False" omits it. -->
-<!-- Restore state: "True"/"False" — not shown in HR in any known configuration. -->
-<!-- XML element order: Option, ESSForceCommit, SkipAutoEntry, Restore (differs from HR display order). -->
-<!-- Requires a matching Commit Transaction step. -->
+<!-- Requires a matching Commit Transaction step to be present. -->

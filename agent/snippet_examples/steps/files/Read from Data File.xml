@@ -10,11 +10,10 @@
     </Count>
   </Step>
 </fmxmlsnippet>
-<!-- DataSourceType value: "1" (UTF-16) | "2" (UTF-8) | "3" (Bytes) -->
+<!-- DataSourceType value: "1" (UTF-16 little endian) | "2" (UTF-8) | "3" (Bytes, no specific encoding) -->
 <!-- Required: Calculation (numeric file ID of an open data file). -->
-<!-- Optional: Count (bytes for UTF-8/Bytes, or code units for UTF-16; if omitted, reads entire file), Target. -->
-<!-- HR label for Count is "Amount (bytes)" for UTF-8 and Bytes; "Amount" (no unit) for UTF-16. -->
-<!-- Target: Field element uses <Field table="" id="0" name=""/> for a field, or <Field>$variable</Field> with a <Text/> sibling for a variable. Variable repetition uses <Field repetition="2">$variable</Field>. -->
+<!-- Target: Field element uses <Field table="" id="0" name=""/> for a field, or <Field>$variable</Field> for a variable. -->
+<!-- Optional: Count (number of bytes for UTF-8/Bytes, or code units for UTF-16; if omitted, reads entire file), Target. -->
 <!-- For Bytes: if target is a variable or container field, data is stored as container data with the source filename. -->
 <!-- Reads from the current read-write position. Use Set Data File Position to change it. -->
 <!-- Maximum 64 MB per read. For larger files, read in chunks. Best performance at 64 KB or less. -->

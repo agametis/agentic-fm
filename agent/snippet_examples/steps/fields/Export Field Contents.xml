@@ -8,10 +8,10 @@
     <Field table="" id="0" name=""/>
   </Step>
 </fmxmlsnippet>
-<!-- CreateDirectories state: "True" creates folders (HR: Create folders: On). "False" does not (HR: Create folders: Off). -->
-<!-- AutoOpen state: "True" opens the exported file (HR: Automatically open shown). "False" does not (HR: omitted). -->
-<!-- CreateEmail state: "True" creates a new email with attachment (HR: Create email shown). "False" does not (HR: omitted). -->
-<!-- Field: target field to export. Supports repetition attribute (HR: Field[rep]). If omitted, exports the current field. -->
+<!-- CreateDirectories state: "True" creates folders specified in the output file path. "False" does not. -->
+<!-- AutoOpen state: "True" opens the exported file with the default application. "False" does not. -->
+<!-- CreateEmail state: "True" creates a new email with the file as attachment. "False" does not. -->
+<!-- Required: Field (target field to export). If omitted, exports the current field in the active table. -->
 <!-- Optional: UniversalPathList (output file path), CreateDirectories, AutoOpen, CreateEmail. If no path is specified, the user is prompted. -->
 <!-- Text fields are exported as UTF-16 (use TextEncode to convert first). In FileMaker Go, text is exported as UTF-8. -->
 <!-- See https://help.claris.com/en/pro-help/content/export-field-contents.html -->

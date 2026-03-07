@@ -23,7 +23,7 @@
   </Step>
 </fmxmlsnippet>
 <!-- Presentation value: "Start Full Screen" (starts full screen, allows switching to embedded) | "Full Screen Only" | "Start Embedded" (starts embedded, allows switching to full screen) | "Embedded Only" | "Audio Only" -->
-<!-- Zoom value: "Fit" (preserves aspect, scales to fit) | "Fill" (preserves aspect, scales to fill) | "Stretch" (stretches to fill, does not preserve aspect) | "FitOnly" | "FillOnly" | "StretchOnly" -->
+<!-- Zoom value: "Fit" (preserves aspect, scales to fit) | "Fill" (preserves aspect, scales to fill) | "Stretch" (stretches to fill, does not preserve aspect) | "Fit Only" | "Fill Only" | "Stretch Only" -->
 <!-- Sequence value: "None" (no additional media) | "Next" (plays next media) | "Previous" (plays previous media) -->
 <!-- HideControls value: "True" hides playback controls. "False" shows playback controls. If controls are hidden but interaction is enabled, gestures can be used. -->
 <!-- DisableInteraction value: "True" disables user interaction with playback (no controls or gestures). "False" enables user interaction. -->

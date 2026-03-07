@@ -13,7 +13,7 @@
 </fmxmlsnippet>
 <!-- NoInteract state: "True" suppresses the Find/Replace Summary dialog (and the Replace All confirmation). "False" shows the dialog. -->
 <!-- FindReplaceOperation type: "FindNext" | "ReplaceAndFind" | "ReplaceAll" | "Replace" -->
-<!-- FindReplaceOperation direction: "Forward" | "Backward" | "All" -->
+<!-- FindReplaceOperation direction: "Forward" | "Backward" -->
 <!-- FindReplaceOperation WithinOptions: "All" (all records/requests) | "Current" (current record/request) -->
 <!-- FindReplaceOperation AcrossOptions: "All" (all fields) | "Current" (current field) -->
 <!-- FindReplaceOperation MatchCase: "True" | "False" -->

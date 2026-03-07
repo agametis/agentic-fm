@@ -2,7 +2,7 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="199" name="Rename File">
     <UniversalPathList>$path</UniversalPathList>
-    <Calculation><![CDATA["new_name"]]></Calculation>
+    <Calculation><![CDATA[""]]></Calculation>
   </Step>
 </fmxmlsnippet>
 <!-- Required: UniversalPathList (source file path), Calculation (new file name as text). -->

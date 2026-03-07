@@ -5,44 +5,10 @@
     <Stream state="False"/>
     <UniversalPathList type="Embedded"/>
     <PerformSQLQuerybyNaturalLanguage>
-      <AccountName>
-        <Calculation><![CDATA["account_name"]]></Calculation>
-      </AccountName>
-      <Model>
-        <Calculation><![CDATA["model"]]></Calculation>
-      </Model>
-      <PromptMessage>
-        <Calculation><![CDATA["prompt"]]></Calculation>
-      </PromptMessage>
       <OptionsSelectionType>By List</OptionsSelectionType>
       <Action>Query</Action>
       <TablesSelectionType>By List</TablesSelectionType>
-      <TableAliases>
-        <Table id="0" name=""/>
-      </TableAliases>
+      <TableAliases/>
     </PerformSQLQuerybyNaturalLanguage>
   </Step>
 </fmxmlsnippet>
-<!-- OptionsSelectionType value: "By List" | "By JSON data" -->
-<!-- UniversalPathList type: "Embedded" when OptionsSelectionType is "By List"; "Reference" when "By JSON data" -->
-<!-- Action value (By List only): "Query" | "Query for Data Only" | "Get SQL" | "Get First SQL Only" | "Get DDL" -->
-<!-- TablesSelectionType value: "By List" -->
-<!-- Option state: "True" shows Parameters. "False" hides Parameters. -->
-<!-- Stream state: "True" enables streaming. "False" disables. -->
-<!-- Required (By List): AccountName, Model, PromptMessage, OptionsSelectionType, Action, TablesSelectionType, TableAliases -->
-<!-- Required (By JSON data): AccountName, Model, PromptMessage, OptionsSelectionType, OptionsName -->
-<!-- Optional (all modes): TemplateName, Parameters (requires Option state="True"), Field (response target), WebScript -->
-<!-- XML element order inside wrapper when all present: Parameters, TemplateName, PromptMessage, OptionsSelectionType, Action/TablesSelectionType/TableAliases or OptionsName, WebScript -->
-<!-- Response Target (field): <Field table="" id="0" name=""/> as sibling before <PerformSQLQuerybyNaturalLanguage> -->
-<!-- Response Target (variable): <Text/><Field>$variable</Field> as siblings before <PerformSQLQuerybyNaturalLanguage> -->
-<!-- By JSON data uses <OptionsName><Calculation><![CDATA["json"]]></Calculation></OptionsName> instead of Action/TablesSelectionType/TableAliases -->
-<!-- WebScript structure (inside wrapper):
-  <WebScript>
-    <ObjectName><Calculation><![CDATA[$object]]></Calculation></ObjectName>
-    <FunctionName><Calculation><![CDATA["myFunction"]]></Calculation></FunctionName>
-    <WebScriptParameters Count="2">
-      <P><Calculation><![CDATA[$parameter1]]></Calculation></P>
-      <P><Calculation><![CDATA[$parameter2]]></Calculation></P>
-    </WebScriptParameters>
-  </WebScript>
--->

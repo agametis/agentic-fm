@@ -2,9 +2,6 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="18" name="Check Selection">
     <SelectAll state="True"/>
-    <Field table="" id="0" name=""/>
   </Step>
 </fmxmlsnippet>
-<!-- SelectAll state: "True" selects all contents of the field before checking. "False" checks only the current selection. -->
-<!-- Optional: Field (target field to check; if omitted, checks the currently active field), SelectAll. -->
 <!-- See https://help.claris.com/en/pro-help/content/check-selection.html -->

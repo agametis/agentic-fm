@@ -6,7 +6,5 @@
     <ShowHide value="Hide"/>
   </Step>
 </fmxmlsnippet>
-<!-- IncludeEditRecordToolbar state: "True" includes the edit record toolbar when showing/hiding. "False" excludes it. Omit when False. -->
-<!-- Lock state: "True" prevents users from showing or hiding the toolbar. "False" allows users to change it. Omit when False. -->
 <!-- ShowHide value: "Show" | "Hide" | "Toggle" -->
 <!-- See https://help.claris.com/en/pro-help/content/show-hide-toolbars.html -->

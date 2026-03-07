@@ -2,12 +2,9 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="148" name="Install OnTimer Script">
     <Interval>
-      <Calculation><![CDATA[10 // Number of seconds]]></Calculation>
+      <Calculation><![CDATA[10 // Number in seconds]]></Calculation>
     </Interval>
-    <Script id="0" name=""/>
+    <Script id="1" name="Script Name"/>
   </Step>
 </fmxmlsnippet>
-<!-- Optional: Interval (wrapper around Calculation), Script. -->
-<!-- Omitting both Script and Interval clears any active timer. -->
-<!-- XML element order: Interval before Script (opposite of HR display order). -->
 <!-- See https://help.claris.com/en/pro-help/content/install-ontimer-script.html -->

@@ -8,16 +8,18 @@ This document describes the architecture of the agentic-fm project -- the data p
 flowchart TD
     A["FileMaker Solution"] -->|"Save a Copy as XML"| B["xml_exports/"]
     B -->|"fmparse.sh"| C["agent/xml_parsed/ (exploded XML)"]
-    C -->|"fmcontext.sh"| D["agent/context/ (index files)"]
+    C -->|"fmcontext.sh"| D["agent/context/{solution}/ (index files)"]
     E["FileMaker evaluates Context()"] --> F["agent/CONTEXT.json (incl. generated_at)"]
     N["companion_server.py (port 8765)"] -->|"Insert from URL"| A
+    C --> K["duckdb/ runtime (in-memory index)"]
     D --> G["AI Script Generation"]
     F --> G
-    K["agent/catalogs/ (step catalog — primary)"] --> G
+    K --> G
+    S["agent/catalogs/ (step catalog — primary)"] --> G
     H["agent/snippet_examples/ (archival)"] -.->|"fallback"| G
     I["agent/xml_parsed/scripts_sanitized/"] --> G
     G -->|"CLI / IDE"| J["agent/sandbox/ (fmxmlsnippet output)"]
-    K --> L["Webviewer (hr-to-xml.ts)"]
+    S --> L["Webviewer (hr-to-xml.ts)"]
     F --> L
     L --> M["HR script in Monaco editor"]
 ```
@@ -26,15 +28,16 @@ Data flows through three stages before it reaches an AI agent:
 
 1. **Export** -- A FileMaker solution is exported as XML via _Save a Copy as XML_.
 2. **Parse** -- `fmparse.sh` archives the export and explodes it into hundreds of individual XML files organised by domain (tables, scripts, layouts, etc.) inside `agent/xml_parsed/`.
-3. **Index** -- `fmcontext.sh` distills the exploded XML into a small set of pipe-delimited index files in `agent/context/{solution}/`, extracting only signal (names, IDs, types, references) and discarding noise (UUIDs, hashes, timestamps, visual positioning).
+3. **Index** -- `fmcontext.sh` distills the exploded XML into a small set of pipe-delimited index files in `agent/context/`, extracting only signal (names, IDs, types, references) and discarding noise (UUIDs, hashes, timestamps, visual positioning).
 
 At script-generation time three additional inputs converge:
 
 - **CONTEXT.json** -- generated inside FileMaker by the `Context()` custom function. It is scoped to the current layout and task, providing exactly the tables, fields, relationships, layouts, scripts, and value lists the AI needs, complete with IDs that can be embedded directly into fmxmlsnippet output. Includes a `generated_at` timestamp (ISO 8601 UTC) used for staleness detection.
 - **Step catalog** (`agent/catalogs/step-catalog-en.json`) -- the single source of truth for all FileMaker script step XML structure. Provides step IDs, parameter definitions, types, enums, HR signatures, and behavioral notes. Agents grep it before any other source; it supersedes snippet_examples as the primary step reference.
 - **snippet_examples/** -- archival fmxmlsnippet templates retained for historical reference and complex step examples not yet fully captured in the catalog. No longer the primary lookup source.
+- **DuckDB runtime** (`duckdb/`) -- an additional retrieval layer for search, comparison, script intelligence, and repository-wide analysis tasks.
 
-The AI combines these inputs to produce fmxmlsnippet output in `agent/sandbox/`, which is then pasted back into FileMaker via the clipboard. The **webviewer** provides a parallel workflow where the same CONTEXT.json and step catalog feed a browser-based editor; HR-to-XML conversion happens client-side via `webviewer/src/converter/hr-to-xml.ts`.
+The AI combines these inputs to produce fmxmlsnippet output in `agent/sandbox/`, which is then pasted back into FileMaker via the clipboard. The **webviewer** remains available as a parallel workflow; the DuckDB runtime is an additional retrieval layer for CLI/IDE workflows and review/search tasks.
 
 ## Artifact Inventory
 
@@ -52,25 +55,30 @@ The AI combines these inputs to produce fmxmlsnippet output in `agent/sandbox/`,
 | Webviewer            | `webviewer/`                          | Manual (checked in)            | Browser-based visual script editor with live HR-to-XML conversion and AI chat |
 | Generated scripts    | `agent/sandbox/`                      | AI agent                       | fmxmlsnippet output ready for clipboard import                |
 | Validation script    | `agent/scripts/validate_snippet.py`   | Manual (checked in)            | Post-generation validation of fmxmlsnippet output; checks staleness and coding conventions |
-| Deploy script        | `agent/scripts/deploy.py`             | Manual (checked in)            | Tiered deployment: Tier 1 (manual clipboard paste), Tier 2 (AGFMPaste via OData), Tier 3 (future full automation) |
+| DuckDB runtime       | `duckdb/`                             | Manual (checked in)            | In-memory indexing/search and script intelligence commands    |
+| DuckDB session state | `duckdb-session/`                     | DuckDB runtime                 | Persistent cache DB, session state, RPC files, JSONL diagnostics |
 
 ## Context Hierarchy
 
 The AI uses a strict hierarchy when looking up FileMaker objects. This hierarchy exists to minimise token consumption -- each level is progressively larger and more expensive to read.
 
 ```
-Priority 1 ─ agent/CONTEXT.json                    (scoped to the current task, ~2-5 KB)
-Priority 2 ─ agent/context/{solution}/*.index      (solution-wide indexes, ~50-100 KB total)
-Priority 3 ─ agent/xml_parsed/                     (full exploded XML, several MB)
+Priority 1 ─ agent/CONTEXT.json         (scoped to the current task, ~2-5 KB)
+Priority 2 ─ agent/context/{solution}/*.index (solution-wide indexes, ~50-100 KB total)
+Priority 3 ─ duckdb/ in-memory index     (broad fast retrieval over XML/docs)
+Priority 4 ─ agent/xml_parsed/           (full exploded XML, several MB)
 ```
 
 1. **CONTEXT.json** -- Read first. Contains everything needed for the current task with IDs ready to use.
-2. **Index files** -- Search via `grep` when CONTEXT.json is missing an object. Each index file is a single flat file covering the entire solution, located under `agent/context/{solution}/`.
-3. **xml_parsed/** -- Last resort. Only grep into this directory when indexes and CONTEXT.json both lack the needed information.
+2. **Index files** -- Search via `grep` when CONTEXT.json is missing an object. Each index file is a single flat file within the active solution subfolder.
+3. **DuckDB in-memory index** -- Preferred for broad repository lookup (script logic, where-used, docs search).
+4. **xml_parsed/** -- Last resort. Only grep into this directory when higher layers cannot answer.
+
+For compare/check/review-style questions, use DuckDB first for evidence collection, then use context/index layers for disambiguation as needed. See `docs/projects/duckdb-search/ai-usage-guide.md`.
 
 ## Index File Format
 
-All index files in `agent/context/{solution}/` follow the same conventions:
+All index files in `agent/context/` follow the same conventions:
 
 - **Pipe-delimited**, one record per line.
 - **Header comment** on the first line documents the column order.
@@ -131,23 +139,23 @@ Consumers: CLI/IDE agents (grep for step structure), webviewer (HR-to-XML conver
 
 ## Interaction Modes
 
-The toolchain supports three interaction modes. All share the same `agent/` folder, CONTEXT.json, and step catalog.
+The toolchain supports three complementary interaction modes:
 
-| Aspect           | CLI (e.g. Claude Code)              | IDE (e.g. Cursor, VS Code)          | Webviewer                                      |
-| ---------------- | ----------------------------------- | ----------------------------------- | ---------------------------------------------- |
-| Interface        | Terminal                            | Editor with AI pane                 | Browser (standalone or embedded in FileMaker)   |
-| Output format    | fmxmlsnippet XML in `agent/sandbox/`| fmxmlsnippet XML in `agent/sandbox/`| HR script in Monaco editor                      |
-| XML generation   | Agent constructs XML from catalog   | Agent constructs XML from catalog   | Client-side `hr-to-xml.ts` converter            |
-| AI provider      | Model behind the CLI/IDE            | Model behind the CLI/IDE            | Anthropic API, OpenAI API, or Claude Code CLI   |
+| Aspect           | CLI / IDE                               | DuckDB-enhanced CLI review                    | Webviewer                                      |
+| ---------------- | --------------------------------------- | --------------------------------------------- | ---------------------------------------------- |
+| Interface        | Terminal / editor AI pane               | Terminal / editor AI pane                     | Browser (standalone or embedded in FileMaker)  |
+| Output format    | fmxmlsnippet XML in `agent/sandbox/`    | fmxmlsnippet XML or evidence reports          | HR script in Monaco editor                     |
+| Retrieval model  | CONTEXT.json + indexes + snippets       | CONTEXT.json + indexes + DuckDB + snippets    | CONTEXT.json + step catalog + browser context  |
+| AI provider      | Model behind the CLI/IDE                | Model behind the CLI/IDE                      | Anthropic API, OpenAI API, or Claude Code CLI  |
 
-The webviewer is a Preact + Monaco + Vite application in `webviewer/`. Its three-panel layout provides a Monaco script editor, live XML preview, and integrated AI chat. It can run as a standalone browser app or embedded inside a FileMaker WebViewer object. See `webviewer/WEBVIEWER_INTEGRATION.md` for full details.
+The webviewer is preserved from upstream. The DuckDB runtime is an additional layer rather than a replacement for the browser-based workflow.
 
 ## Script Generation Workflow
 
 The AI follows a mandatory sequence when generating fmxmlsnippet output:
 
 1. **Read `agent/CONTEXT.json`** -- understand the task and collect all reference IDs.
-2. **Grep the step catalog** (`agent/catalogs/step-catalog-en.json`) for each step type being generated. The catalog is the single source of truth — behavioral notes from snippet_examples have been migrated into the catalog's `notes` field. For steps with `"status": "complete"`, construct XML directly from the catalog's `params` array. Fall back to reading the corresponding `agent/snippet_examples/` file only for archival reference when the catalog entry is insufficient.
+2. **Grep the step catalog** (`agent/catalogs/step-catalog-en.json`) for each step type being generated. The catalog is the single source of truth; fall back to reading the corresponding `agent/snippet_examples/` file only when the catalog entry is insufficient or still incomplete.
 3. **Substitute IDs and names** from CONTEXT.json into the step structure.
 4. If a reference is missing from CONTEXT.json, search the relevant `agent/context/{solution}/*.index` file.
 5. Only fall back to `agent/xml_parsed/` as a last resort.
@@ -158,7 +166,7 @@ Output rules:
 
 - All output is fmxmlsnippet XML wrapped in `<fmxmlsnippet type="FMObjectList">`.
 - Output contains **script steps only** -- never wrap in `<Script>` tags.
-- Step structures must match the step catalog or snippet_examples; never invent or guess XML structure.
+- Step structures must match the step catalog and/or snippet_examples exactly; never invent or guess XML structure.
 - Paired steps (e.g. `If` / `End If`, `Open Transaction` / `Commit Transaction`) must always appear together.
 - In the webviewer context, output HR format instead of XML -- the client-side converter handles the translation.
 
@@ -172,7 +180,7 @@ Archives a FileMaker XML export and explodes it into per-object XML files using 
 ./fmparse.sh -s "<Solution Name>" <path-to-export> [options]
 ```
 
-- Clears and repopulates only the current solution's subdirectories within `agent/xml_parsed/` on each run, preserving other solutions' data. This supports the FileMaker data separation model where multiple files (e.g. UI.fmp12, Data.fmp12) are parsed independently.
+- Clears and repopulates `agent/xml_parsed/` on each run, then synchronizes the DuckDB runtime inputs used by this branch.
 - Archives the export under `xml_exports/<Solution>/<date>/`.
 
 ### fmcontext.sh
@@ -180,14 +188,12 @@ Archives a FileMaker XML export and explodes it into per-object XML files using 
 Generates AI-optimised index files from the exploded XML.
 
 ```
-./fmcontext.sh                         # regenerate all solutions
-./fmcontext.sh -s "Invoice Solution"   # regenerate one solution only
+./fmcontext.sh [-s "<Solution Name>"]
 ```
 
 - Reads `agent/xml_parsed/` and writes to `agent/context/{solution}/`.
-- Supports multiple solutions: each solution gets its own subfolder, mirroring the xml_parsed hierarchy.
 - Uses `xmllint --xpath` (ships with macOS; `libxml2-utils` on Linux).
-- Clears and regenerates only the targeted solution's subfolder on each run.
+- Clears and regenerates the selected solution output directory on each run.
 - Run after `fmparse.sh` whenever the solution XML changes.
 
 ### validate_snippet.py
@@ -234,7 +240,7 @@ Context ( "Create a script to add a new line item to the current invoice" )
 
 When extending this project, keep the following principles in mind:
 
-1. **Preserve the context hierarchy.** Any new data source should slot into the existing priority order (CONTEXT.json > index files > xml_parsed). If you add a new index file, document it in this file and in `.cursor/AGENTS.md`. New index files follow the same `agent/context/{solution}/` subfolder pattern.
+1. **Preserve the context hierarchy.** Any new data source should slot into the existing priority order (CONTEXT.json > index files > DuckDB > xml_parsed). If you add a new index file, document it in this file and in `.cursor/AGENTS.md`.
 
 2. **Keep indexes lean.** Index files exist to reduce token consumption. Only extract signal -- names, IDs, types, and references. Discard UUIDs, hashes, timestamps, and visual positioning data.
 
@@ -245,20 +251,19 @@ When extending this project, keep the following principles in mind:
    - Update `.cursor/AGENTS.md` so the AI knows how to use the new artifact.
    - Update `README.md` if the change affects end-user workflow or project structure.
 
-5. **The step catalog is the single source of truth for step structure.** `agent/catalogs/step-catalog-en.json` is the definitive reference for step XML structure, parameter definitions, enums, and behavioral notes. `snippet_examples/` is archival — it serves as a fallback only for complex steps with `"auto"`/`"unfinished"` catalog status or where the catalog entry remains insufficient. If you add support for a new script step type, add its catalog entry (including behavioral notes in the `notes` field) and a corresponding snippet_examples template for reference. All snippet files must follow the conventions in `agent/snippet_examples/steps/CONVENTIONS.md`.
+5. **The step catalog is the single source of truth for step structure.** `agent/catalogs/step-catalog-en.json` is the definitive reference for step XML structure, parameter definitions, enums, and behavioral notes. `snippet_examples/` is archival — it serves as a fallback only for complex steps with `"auto"`/`"unfinished"` catalog status or where the catalog entry remains insufficient. If you add support for a new script step type, add its catalog entry and keep any corresponding snippet example in sync for reference and regression coverage.
 
 6. **CONTEXT.json is generated, not authored.** Changes to the CONTEXT.json schema require updating the `Context()` custom function in FileMaker (`filemaker/Context.fmfn`), not just the example file. The `agent/CONTEXT.example.json` file and `docs/Context.fmfn.md` should be updated to reflect any schema changes.
 
-7. **xml_parsed is read-only.** Never modify files in `agent/xml_parsed/`. It is a reference copy of the exploded FileMaker XML. Each solution's subdirectories are regenerated when `fmparse.sh` runs for that solution.
-
-8. **Webviewer changes require converter parity.** If you modify the step catalog or add new step types, verify that the webviewer's HR-to-XML converter (`webviewer/src/converter/hr-to-xml.ts`) handles the changes correctly. The converter must stay in sync with the catalog.
+7. **xml_parsed is read-only.** Never modify files in `agent/xml_parsed/`. It is a reference copy of the exploded FileMaker XML and is regenerated on each `fmparse.sh` run.
 
 ## Dependencies
 
-| Dependency                                                               | Required By                                   | Notes                                                                            |
-| ------------------------------------------------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| [fm-xml-export-exploder](https://github.com/bc-m/fm-xml-export-exploder) | `fmparse.sh`                                  | Must be on PATH or set via `FM_XML_EXPLODER_BIN`                                 |
-| `xmllint`                                                                | `fmcontext.sh`                                | Ships with macOS; `libxml2-utils` on Linux                                       |
-| FileMaker Pro 21.0+                                                      | `Context()` function                          | For `GetTableDDL` and `While` support                                            |
-| Python 3 (stdlib)                                                        | `clipboard.py`, `validate_snippet.py`, `companion_server.py`, `deploy.py` | No virtualenv required; run directly with `python3 agent/scripts/...` |
-| Node.js 18+                                                              | `webviewer/`                                  | For Vite dev server and build                                                    |
+| Dependency                                                               | Required By                                       | Notes                                                                            |
+| ------------------------------------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [fm-xml-export-exploder](https://github.com/bc-m/fm-xml-export-exploder) | `fmparse.sh`                                      | Must be on PATH or set via `FM_XML_EXPLODER_BIN`                                 |
+| `xmllint`                                                                | `fmcontext.sh`                                    | Ships with macOS; `libxml2-utils` on Linux                                       |
+| FileMaker Pro 21.0+                                                      | `Context()` function                              | For `GetTableDDL` and `While` support                                            |
+| Python 3 (stdlib)                                                        | `clipboard.py`, `validate_snippet.py`, `companion_server.py` | No virtualenv required; run directly with `python3 agent/scripts/...` |
+| Node.js 18+                                                              | `duckdb/`, `webviewer/`                           | For the DuckDB runtime, Vite dev server, and website builds                      |
+| MBS FileMaker Plugin _(legacy)_                                          | Older Explode XML installs only                   | Replaced by `companion_server.py`; no longer required for new setups             |

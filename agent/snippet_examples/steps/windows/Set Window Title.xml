@@ -4,17 +4,16 @@
     <LimitToWindowsOfCurrentFile state="True"/>
     <Window value="ByName"/>
     <Name>
-      <Calculation><![CDATA["target_window"]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </Name>
     <NewName>
-      <Calculation><![CDATA["new_window_name"]]></Calculation>
+      <Calculation><![CDATA[]]></Calculation>
     </NewName>
   </Step>
 </fmxmlsnippet>
 <!-- LimitToWindowsOfCurrentFile state: "True" restricts matches to current file (Current file only option). "False" matches all available FileMaker Pro files. -->
 <!-- Window enumeration: "ByName" selects open window by name (not case-sensitive); "Current" renames current foreground window when script step is performed. -->
 <!-- Required: NewName (new title for window). -->
-<!-- Optional: Name (target window name; only used when Window is "ByName"; omit when Window is "Current"). -->
 <!-- Changes title of a window. Can change name of any open window. -->
 <!-- Window name selection is not case sensitive. -->
 <!-- See https://help.claris.com/en/pro-help/content/set-window-title.html -->

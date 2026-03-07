@@ -144,35 +144,11 @@ This server listens on port 8765 and handles the shell command that **Explode XM
 
 Run the **Explode XML** script to perform the first Save as XML export and populate `agent/xml_parsed/`. Re-run it any time the solution schema or scripts change.
 
-> The script derives the `fmparse.sh` path from the `$$AGENTIC.FM` global variable set by **Get agentic-fm path**, so the repo can be located anywhere on disk.
+> **Current limitation:** The `fmparse.sh` path inside the **Explode XML** script is hardcoded to `~/Desktop/agentic-fm/fmparse.sh`. The repo must currently be located in your Desktop folder for this script to work. If your repo is elsewhere, open the script and update the `Set Variable [$fmparse]` step to reflect the correct path. This limitation will be resolved in a future update.
 
 ### 5. Push Context before each AI session
 
 Navigate to the layout you are working on and run the **Push Context** script. A dialog will prompt you for a task description. After you click OK, the context is written to `agent/CONTEXT.json` and you are ready to work with AI.
-
----
-
-## Optional: agentic-fm web viewer
-
-The agentic-fm web viewer is a browser-based Monaco editor embedded directly in FileMaker. It provides a three-panel interface — script editor, XML preview, and AI chat — without leaving FileMaker Pro.
-
-### Adding the web viewer to a layout
-
-Add a **WebViewer** object to any layout and set its URL to `http://localhost:8080` (the Vite dev server). Name the object exactly **`agentic-fm`** — this name is required for the bridge script and custom menu integration to work correctly.
-
-The web viewer works on any layout, but a **dedicated layout** is strongly recommended:
-
-- Place only the web viewer object on the layout with no other interactive objects
-- Make the layout window **resizable** so you can expand the editor to a comfortable size
-- A single-object layout ensures the custom menu set (assigned per-layout) applies consistently whenever the editor is in use
-
-See `webviewer/WEBVIEWER_INTEGRATION.md` for full setup and development workflow details.
-
-### Custom menu integration (optional)
-
-The `filemaker/custom_menu/` folder contains an optional custom menu set that adds five editor-aware menus to the layout hosting the web viewer. These menus expose keyboard shortcuts for common Monaco editor actions (comment toggle, indent, move line, find, and more) without requiring the developer to remember key bindings.
-
-See `filemaker/custom_menu/README.md` for the integration steps.
 
 ---
 

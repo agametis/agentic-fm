@@ -184,6 +184,15 @@ Things the script does well (acknowledge good patterns):
 
 ---
 
+## Must Rules
+
+1. Use DuckDB script intelligence first (`script-explain`, `script-calls`, `script-where-used`) to understand behavior and relationships quickly.
+2. Use `scripts_sanitized` for readable line-level logic confirmation.
+3. Use Save-As-XML only as reference input, never as final output format.
+4. Final editable output remains fmxmlsnippet in `agent/sandbox/`.
+5. For "check/compare/validate" review prompts, gather evidence from DuckDB before opening raw XML files.
+6. Apply the compare/check evidence workflow from `docs/projects/duckdb-search/ai-usage-guide.md`.
+
 ## Two script formats — know the difference
 
 There are two distinct XML formats in this project. They are **not interchangeable**:
@@ -195,6 +204,26 @@ There are two distinct XML formats in this project. They are **not interchangeab
 
 When applying review findings as code changes, follow the refactoring workflow:
 
-1. **Find or create the fmxmlsnippet version** — check `agent/sandbox/` first. If none exists, convert via `python3 agent/scripts/fm_xml_to_snippet.py`.
-2. **Apply only the targeted changes** — unchanged steps remain verbatim.
-3. **Validate**: `python3 agent/scripts/validate_snippet.py agent/sandbox/{script_name}`
+When applying optimizations or refactoring an existing script:
+
+1. **Resolve script via DuckDB first**:
+   - ensure session is active:
+     - `npm run duckdb:session:status`
+     - if needed: `npm run duckdb:session:start`
+     - if stale: `npm run duckdb:session:refresh`
+   - `npm run duckdb:script:explain -- "<script id|name>"`
+   - `npm run duckdb:script:calls -- "<script id|name>"`
+   - `npm run duckdb:script:where-used -- "<script id|name>"`
+2. **Find fmxmlsnippet base** in `agent/scripts/` or `agent/sandbox/`. If it exists, use it as the base.
+3. **If no fmxmlsnippet exists**, translate from `agent/xml_parsed/scripts/` via `agent/scripts/fm_xml_to_snippet.py`.
+4. **Apply targeted edits only** to specific `<Step>` elements. Keep all unchanged steps verbatim.
+5. **Validate output** with `python3 agent/scripts/validate_snippet.py agent/sandbox/<script_name>`.
+6. **Report review findings** using script-intelligence context (logic, dependencies, where-used impact).
+
+## Fallback behavior
+
+If DuckDB commands are unavailable:
+
+1. Use `script-lookup` file-based resolution path.
+2. Continue review with `scripts_sanitized` + `scripts` artifacts.
+3. Note fallback mode in the result.

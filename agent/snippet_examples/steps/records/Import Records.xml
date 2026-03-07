@@ -14,15 +14,14 @@
     </TargetFields>
   </Step>
 </fmxmlsnippet>
-<!-- NoInteract state: "True" suppresses dialog (With dialog: Off). "False" shows dialog. -->
-<!-- Restore state: "True" uses stored import order. "False" does not restore stored import order. -->
-<!-- VerifySSLCertificates state: "True" verifies SSL certificates (Verify SSL Certificates). "False" does not verify. Flag-style in HR. -->
-<!-- DataSourceType value: "File" | "Folder" | "XMLSource" -->
-<!-- ImportOptions method: "Add" (HR: Add) | "UpdateOnMatch" (HR: Update) | "Update" (HR: Replace). Note: HR "Update" = XML "UpdateOnMatch", HR "Replace" = XML "Update". -->
-<!-- ImportOptions attributes: CharacterSet, PreserveContainer, MatchFieldNames, AutoEnter, SplitRepetitions, AddRemainingRecords. -->
-<!-- Field map attribute: "Import" | "DoNotImport" | "Match" (for UpdateOnMatch key fields). -->
-<!-- Profile: varies by DataSourceType. File: DataType codes (FMPR, TABS, COMS, MRGE, XLS, XLSX, DBF). Folder: ImportByReference, PictureAndMovieImport, IncludeEnclosedFolders, FolderName. XMLSource: XMLType/XSLType with File/Http/Calculation child elements. -->
-<!-- Optional: NoInteract, Restore, VerifySSLCertificates, Profile, ImportOptions, Table (target table), TargetFields (field mapping). -->
+<!-- NoInteract state: "True" suppresses import-related dialog boxes. "False" displays dialog boxes. However, if data source file not specified, Open File dialog displays when script runs. -->
+<!-- Restore state: "True" uses stored import order (defines whether to add, update, or replace records in current found set and how source fields map to target fields). "False" does not restore stored import order. -->
+<!-- VerifySSLCertificates state: "True" verifies SSL certificate of server specified in HTTP request for XML data. "False" does not verify. If certificate cannot be verified: users can choose to connect or cancel; if Set Error Capture is On, behaves as if server unavailable. -->
+<!-- DataSourceType enumeration: "File" imports from file; other values for different data sources (e.g., ODBC, XML via HTTP). -->
+<!-- ImportOptions attributes: CharacterSet (character encoding: "UTF-8", "UTF-16", etc.); PreserveContainer ("True" preserves container field references, "False" does not); MatchFieldNames ("True" performs dynamic field name matching each time step runs, "False" uses fixed mapping); AutoEnter ("True" performs auto-enter options for individual fields, "False" does not); SplitRepetitions ("True" splits repeating fields, "False" does not); method ("Add" adds new records, "Update" updates existing records, "Replace" replaces found set records). -->
+<!-- Field map attribute: "Import" imports field; "DoNotImport" skips field; "MatchingNames" matches by field name. -->
+<!-- Required: DataSourceType, UniversalPathList (file or source path). -->
+<!-- Optional: NoInteract, Restore (specify import order), VerifySSLCertificates, ImportOptions, Table (target table), TargetFields (field mapping with FieldOptions and map attributes). -->
 <!-- Imports records from specified file or data source. -->
 <!-- If source file is open, found set is imported; if not, all records in source table are imported. -->
 <!-- Can set import order using Specify import order option, or perform with dialog box so user can set new criteria (e.g., importing data as new table). -->

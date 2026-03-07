@@ -4,7 +4,7 @@
     <UniversalPathList type="Reference">$path</UniversalPathList>
   </Step>
 </fmxmlsnippet>
-<!-- UniversalPathList type: "Embedded" (embeds the file) | "Reference" (stores only a link to the file). -->
+<!-- UniversalPathList type: "Reference" (stores only a link to the file) | omit type attribute to embed the file. -->
 <!-- Optional: UniversalPathList (source file path). If omitted, the user is prompted with a dialog to select a file. -->
 <!-- A container field must be active before this step runs; use Go to Field if needed. Returns an error if no active container field. -->
 <!-- Works only for interactive containers, not standard containers. -->

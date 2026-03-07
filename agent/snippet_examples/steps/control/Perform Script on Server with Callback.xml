@@ -12,11 +12,9 @@
     </CallbackScript>
   </Step>
 </fmxmlsnippet>
-<!-- CallbackScriptState value (HR: "State"): "Continue" | "Halt" | "Exit" | "Resume" | "Pause". -->
-<!-- Specified: From list — use <Script id="0" name=""/> with no <Calculated>. -->
-<!-- Specified: By name — use <Calculated><Calculation/></Calculated> before <CallbackScriptState>; omit <Script>. -->
-<!-- Optional: Calculation (HR: "Parameter") for the main server script. Always optional regardless of other settings. -->
-<!-- Optional: CallbackScript containing <ScriptName id="0" name=""/> and optional <ScriptParameter><Calculation/></ScriptParameter> for the callback's parameter. -->
+<!-- CallbackScriptState value: "Continue" | "Halt" | "Exit" | "Resume" | "Pause" -->
+<!-- Required: Script (server-side script to perform). -->
+<!-- Optional: Calculation (parameter for server script), CallbackScript (callback script with its own parameter). -->
 <!-- If CallbackScript is omitted, this step behaves like Perform Script on Server. -->
 <!-- The callback script's parameter Calculation is evaluated when the callback runs on the client, not when the server script starts. Avoid Get(ScriptParameter) and Get(ScriptResult); use constants, global fields, or global variables instead. -->
 <!-- The current file must be hosted on FileMaker Server or FileMaker Cloud. -->

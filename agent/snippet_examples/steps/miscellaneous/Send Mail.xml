@@ -6,58 +6,58 @@
       <UniversalPathList>$attachmentFilePathList</UniversalPathList>
     </Attachment>
     <To UseFoundSet="False">
-      <Calculation><![CDATA[$to]]></Calculation>
+      <Calculation>$to</Calculation>
     </To>
     <Cc UseFoundSet="False">
-      <Calculation><![CDATA[$cc]]></Calculation>
+      <Calculation>$cc</Calculation>
     </Cc>
     <Bcc UseFoundSet="False">
-      <Calculation><![CDATA[$bcc]]></Calculation>
+      <Calculation>$bcc</Calculation>
     </Bcc>
     <Subject>
-      <Calculation><![CDATA[$subject]]></Calculation>
+      <Calculation>$subject</Calculation>
     </Subject>
     <Message>
-      <Calculation><![CDATA[$message]]></Calculation>
+      <Calculation>$message</Calculation>
     </Message>
     <SMTPNameDescription>
-      <Calculation><![CDATA[$name]]></Calculation>
+      <Calculation>$name</Calculation>
     </SMTPNameDescription>
     <SMTPEmailAddress>
-      <Calculation><![CDATA[$from]]></Calculation>
+      <Calculation>$from</Calculation>
     </SMTPEmailAddress>
     <SMTPReplyAddress>
-      <Calculation><![CDATA[$replyTo]]></Calculation>
+      <Calculation>$replyTo</Calculation>
     </SMTPReplyAddress>
     <SMTPServer>
-      <Calculation><![CDATA[$smtp]]></Calculation>
+      <Calculation>$smtp</Calculation>
     </SMTPServer>
     <SMTPPort>
-      <Calculation><![CDATA[587]]></Calculation>
+      <Calculation>587</Calculation>
     </SMTPPort>
     <SMTPUserName>
-      <Calculation><![CDATA[$username]]></Calculation>
+      <Calculation>$username</Calculation>
     </SMTPUserName>
     <SMTPPassword>
-      <Calculation><![CDATA[$password]]></Calculation>
+      <Calculation>$password</Calculation>
     </SMTPPassword>
     <OAuthNameDescription>
-      <Calculation><![CDATA[$name]]></Calculation>
+      <Calculation>$name</Calculation>
     </OAuthNameDescription>
     <OAuthEmailAddress>
-      <Calculation><![CDATA[$from]]></Calculation>
+      <Calculation>$from</Calculation>
     </OAuthEmailAddress>
     <OAuthReplyAddress>
-      <Calculation><![CDATA[$replyTo]]></Calculation>
+      <Calculation>$replyTo</Calculation>
     </OAuthReplyAddress>
     <OAuthUserID>
-      <Calculation><![CDATA[$adminUserEmail]]></Calculation>
+      <Calculation>$adminUserEmail</Calculation>
     </OAuthUserID>
     <OAuthAccountEmail>
-      <Calculation><![CDATA[$serviceAccountEmail]]></Calculation>
+      <Calculation>$serviceAccountEmail</Calculation>
     </OAuthAccountEmail>
     <OAuthPrivateKey>
-      <Calculation><![CDATA[$privateKey]]></Calculation>
+      <Calculation>$privateKey</Calculation>
     </OAuthPrivateKey>
     <MultipleEmails state="False"/>
     <SendViaSMTP state="False"/>
@@ -67,24 +67,26 @@
     <OAuthProvider type="OAuthProviderGoogle"/>
   </Step>
 </fmxmlsnippet>
-<!-- NoInteract state: "True" suppresses the composed email dialog (email placed in outbox). "False" leaves composed message open for review. -->
-<!-- MultipleEmails state: "True" sends one message per record in found set. "False" sends one message using data from current record. -->
+<!-- NoInteract state: "True" suppresses the composed email dialog (email is placed in outbox and sent when connected to network). "False" leaves composed message open for review in email application. -->
+<!-- MultipleEmails state: "True" sends one message for each record in found set to all specified recipients. "False" sends one message using data from current record to all specified recipients. -->
 <!-- SendViaSMTP state: "True" sends via SMTP server. "False" does not use SMTP. -->
 <!-- SendViaOAuthAuthentication state: "True" sends via OAuth 2.0. "False" does not use OAuth. -->
-<!-- To/Cc/Bcc UseFoundSet attribute: "True" collects addresses across found set. "False" uses single value. -->
-<!-- SMTPEncryptionType type: "SMTPEncryptionNone" | "SMTPEncryptionTLS" | "SMTPEncryptionSSL" -->
-<!-- SMTPAuthenticationType type: "SMTPAuthenticationNone" | "SMTPAuthenticationPlain" -->
-<!-- OAuthProvider type: "OAuthProviderGoogle" | "OAuthProviderMicrosoft" -->
-<!-- Microsoft OAuth requires additional fields (add after OAuthPrivateKey):
-  <OAuthPrincipalName><Calculation><![CDATA[$principalName]]></Calculation></OAuthPrincipalName>
-  <OAuthTenantID><Calculation><![CDATA[$tenantId]]></Calculation></OAuthTenantID>
-  <OAuthClientID><Calculation><![CDATA[$clientId]]></Calculation></OAuthClientID>
-  <OAuthClientSecret><Calculation><![CDATA[$clientSecret]]></Calculation></OAuthClientSecret>
--->
-<!-- Optional: To, Cc, Bcc, Subject, Message, Attachment (UniversalPathList file paths). -->
-<!-- Optional SMTP fields: SMTPNameDescription, SMTPEmailAddress, SMTPReplyAddress, SMTPServer, SMTPPort, SMTPUserName, SMTPPassword. -->
-<!-- Optional OAuth fields (Google): OAuthNameDescription, OAuthEmailAddress, OAuthReplyAddress, OAuthUserID, OAuthAccountEmail, OAuthPrivateKey. -->
-<!-- Optional OAuth fields (Microsoft, in addition to Google fields): OAuthPrincipalName, OAuthTenantID, OAuthClientID, OAuthClientSecret. -->
-<!-- Multiple email addresses in To/Cc/Bcc separated by carriage return or semicolon. -->
-<!-- Email application mode: set SendViaSMTP="False" and SendViaOAuthAuthentication="False"; omit SMTP/OAuth fields. -->
+<!-- To/Cc/Bcc UseFoundSet attribute: "True" collects addresses across found set (available for one email using field or calculation). "False" uses single value. -->
+<!-- SMTPEncryptionType enumeration: "SMTPEncryptionTLS" (TLS encryption), other encryption types. -->
+<!-- SMTPAuthenticationType enumeration: "SMTPAuthenticationPlain" (plain authentication), other authentication types. -->
+<!-- OAuthProvider enumeration: "OAuthProviderGoogle" (Google OAuth), other OAuth providers. -->
+<!-- Optional: To (recipient addresses), Cc (carbon copy addresses), Bcc (blind carbon copy addresses), Subject, Message, Attachment (file paths), SMTP options (SMTPServer, SMTPPort, SMTPUserName, SMTPPassword, SMTPNameDescription, SMTPEmailAddress, SMTPReplyAddress, SMTPEncryptionType, SMTPAuthenticationType), OAuth options (OAuthProvider, OAuthUserID, OAuthAccountEmail, OAuthPrivateKey, OAuthNameDescription, OAuthEmailAddress, OAuthReplyAddress). -->
+<!-- Sends email via email application, SMTP, or OAuth 2.0. -->
+<!-- Multiple email addresses in To/Cc/Bcc must be separated by carriage return or semicolon (some email clients don't accept other separators like comma). -->
+<!-- Attach Files attaches all files in list that can be found at specified paths (doesn't search and choose first file). -->
+<!-- Can create PDF or Excel files from data to send as attachments (use Save Records as PDF or Save Records as Excel first). -->
+<!-- Sends email as plain text. To edit message contents and formatting, use email client with NoInteract="False". -->
+<!-- FileMaker Pro verifies SSL certificate of SMTP server using encrypted connection. If verification fails: users can choose to connect or cancel; if Set Error Capture is On, behaves as if server unavailable; in server-side scripts, Data API, CWP, and WebDirect, behaves as if canceled by user. -->
+<!-- If MultipleEmails="True" with SMTP or OAuth and error occurs while emailing one record, remaining records will not be sent. -->
+<!-- Email application not supported in server-side scripts, Data API, or CWP. -->
+<!-- Server-side scripts support SMTP and OAuth, but attached files must be in folder accessible to server-side scripts. -->
+<!-- WebDirect: doesn't support Attach Files option; doesn't support NoInteract="False" when using email client; email via client limited to 2000 characters total for To/Cc/Bcc/Subject/Body (browser may not allow sending if exceeded). -->
+<!-- Go: doesn't support NoInteract="False" (email displays on device for manual sending). -->
+<!-- Data API and CWP: don't support Attach Files option. -->
+<!-- To send via email application: must have supported email application installed and configured; Windows requires [Mail] section in Win.ini file. -->
 <!-- See https://help.claris.com/en/pro-help/content/send-mail.html -->

@@ -4,14 +4,13 @@
     <NoInteract state="True"/>
     <SelectAll state="False"/>
     <RowPageLocation value="ByCalculation"/>
-    <Calculation><![CDATA[1]]></Calculation>
+    <Calculation><![CDATA[]]></Calculation>
   </Step>
 </fmxmlsnippet>
-<!-- RowPageLocation value: "First" | "Last" | "Previous" | "Next" | "ByCalculation" -->
-<!-- Exit state: "True" exits after last/first row (only applies when RowPageLocation is "Previous" or "Next"). "False" does not exit. -->
-<!-- NoInteract state: "True" suppresses dialog (With dialog: Off). "False" shows dialog for user to confirm row number. Only applies to "ByCalculation". -->
-<!-- SelectAll state: "True" selects entire portal row (Select). "False" only one field in portal is active. -->
-<!-- Optional: Exit (with Previous/Next only), Calculation (for ByCalculation option). -->
+<!-- RowPageLocation enumeration: "First" moves to first row in portal; "Last" moves to last row; "Previous" moves to previous row; "Next" moves to next row; "ExitAfterLast" exits script when reaches last portal row (use with Next or Previous; useful within loop to exit after last row); "ByCalculation" moves to row number that is result of calculation (or row number confirmed in dialog if NoInteract is False). -->
+<!-- NoInteract state: "True" suppresses dialog (uses calculation result directly). "False" shows dialog for user to confirm row number. -->
+<!-- SelectAll state: "True" selects entire portal row. "False" only one field in portal is active. -->
+<!-- Optional: RowPageLocation (defaults to specific navigation method), Calculation (for ByCalculation option), SelectAll, NoInteract. -->
 <!-- Navigates among rows in active portal. When no portal is active, uses first portal in layout stacking order. -->
 <!-- Tries to keep same field selected when changing rows. If no field in portal is selected, selects first field it can enter. -->
 <!-- Example: if third field in second portal row is selected, Go to Portal Row [Next] goes to third field in third portal row. -->

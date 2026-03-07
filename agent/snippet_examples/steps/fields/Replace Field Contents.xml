@@ -4,7 +4,7 @@
     <NoInteract state="True"/>
     <Restore state="True"/>
     <With value="Calculation"/>
-    <Calculation><![CDATA["value"]]></Calculation>
+    <Calculation><![CDATA[]]></Calculation>
     <SerialNumbers PerformAutoEnter="True" UpdateEntryOptions="False" UseEntryOptions="True"/>
     <Field table="" id="0" name=""/>
   </Step>
@@ -12,7 +12,7 @@
 <!-- NoInteract state: "True" suppresses the Replace Field Contents dialog. "False" shows the dialog. -->
 <!-- Restore state: "True" uses the stored/specified replacement settings. "False" does not restore stored settings. -->
 <!-- With value: "Calculation" (replace with calculated result) | "SerialNumbers" (reserialize the field) | "CurrentContents" (replace with current record's value) -->
-<!-- SerialNumbers PerformAutoEnter: "True" applies auto-enter options on the target field after replacement. "False" skips auto-enter (shown in HR as "Skip auto-enter options"). -->
+<!-- SerialNumbers PerformAutoEnter: "True" triggers auto-enter options on other fields as records are updated. "False" does not. -->
 <!-- SerialNumbers UpdateEntryOptions: "True" resets Entry Options serial number to follow reserialized records. "False" leaves Entry Options unchanged. -->
 <!-- SerialNumbers UseEntryOptions: "True" uses Entry Options next value as starting serial. "False" uses custom start/increment values. -->
 <!-- Required: Field (target field for replace). -->

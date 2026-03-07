@@ -2,11 +2,11 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="182" name="Truncate Table">
     <NoInteract state="True"/>
-    <BaseTable id="131" comment="" name="Clients"/>
+    <BaseTable id="" comment="" name=""/>
   </Step>
 </fmxmlsnippet>
 <!-- NoInteract state: "True" suppresses confirmation dialog asking user to confirm record deletion. "False" displays confirmation dialog. -->
-<!-- Required: BaseTable (source table to truncate; can be current table or specified table in current file only; id should be populated with table ID). For current table: id="-1" name="&lt;Current Table&gt;". -->
+<!-- Required: BaseTable (source table to truncate; can be current table or specified table in current file only; id should be populated with table ID). -->
 <!-- Optional: NoInteract. -->
 <!-- Deletes all records in specified source table regardless of current found set. IMPORTANT: Cannot undo deleting all records. -->
 <!-- Attempts to lock all records in source table before deleting. If cannot lock all records (e.g., record being edited by another user), stops and returns error code (capturable with Get(LastError)). -->

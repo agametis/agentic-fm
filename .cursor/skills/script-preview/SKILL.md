@@ -7,13 +7,30 @@ description: Generates a human-readable preview of a proposed FileMaker script b
 
 Produce a human-readable script outline for review and iteration before generating fmxmlsnippet XML.
 
-## Step 1: Read context
+## Must Rules
 
-Read `agent/CONTEXT.json`. Extract:
+1. Use current context and DuckDB retrieval to ground the preview in existing project logic.
+2. Keep preview human-readable and structured like `scripts_sanitized`.
+3. Prefer reuse of existing script patterns when related scripts already exist.
+4. Do not emit final fmxmlsnippet XML during preview stage.
 
-- `task` — what the script should do
-- `current_layout` — the starting context
-- Any relevant fields, scripts, layouts, and value lists needed
+## Step 1: Read context + related logic
+
+Read `agent/CONTEXT.json` and extract:
+
+- `task`
+- `current_layout`
+- relevant fields/scripts/layouts/value lists
+
+Then query related logic via DuckDB:
+
+- Ensure session first:
+  - `npm run duckdb:session:status`
+  - if needed: `npm run duckdb:session:start`
+  - if stale: `npm run duckdb:session:refresh`
+- `npm run duckdb:search -- "<task keywords>"`
+- `npm run duckdb:script:explain -- "<related script name|id>"` when references exist
+- `npm run duckdb:script:calls -- "<related script name|id>"` for dependency awareness
 
 ## Step 2: Output the preview
 
@@ -48,24 +65,25 @@ Script: Process Invoice
 
 ## Step 3: Invite iteration
 
-After the preview, ask:
+After presenting the preview, ask the user whether to:
 
-```
-AskQuestion:
-{
-  "question": "Does this logic look right?",
-  "options": [
-    { "id": "good", "label": "Looks good — generate the XML" },
-    { "id": "changes", "label": "I have changes to make" }
-  ]
-}
-```
+1. accept and generate XML,
+2. revise logic, or
+3. inspect a related existing script first.
 
-- If **changes**: ask the user to describe them, update the preview, and loop back to Step 3.
-- If **good**: proceed directly to full fmxmlsnippet generation following the standard script creation workflow in AGENTS.md.
+If revisions are requested, update the full preview and repeat Step 3.
+If accepted, proceed to XML generation workflow.
 
 ## Notes
 
 - The preview is a planning artifact — calculations don't need to be exact FileMaker syntax yet
 - Line numbers in the preview are for the developer's reference during iteration, not final output
 - When iterating, show the full updated preview each time (not just the changed lines)
+
+## Fallback behavior
+
+If DuckDB retrieval is unavailable:
+
+1. Continue using `agent/CONTEXT.json` plus direct file lookup.
+2. Prefer `scripts_sanitized` for related logic examples.
+3. Note fallback mode briefly if relevant.

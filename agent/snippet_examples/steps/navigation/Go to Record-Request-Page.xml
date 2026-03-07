@@ -6,10 +6,9 @@
     <Calculation><![CDATA[""]]></Calculation>
   </Step>
 </fmxmlsnippet>
-<!-- RowPageLocation value: "First" | "Last" | "Previous" | "Next" | "ByCalculation" -->
-<!-- Exit state: "True" exits after last/first row (only applies when RowPageLocation is "Previous" or "Next"). "False" does not exit. -->
-<!-- NoInteract state: "True" suppresses dialog (With dialog: Off). "False" shows dialog for user to confirm number. Only applies to "ByCalculation". -->
-<!-- Optional: Exit (with Previous/Next only), Calculation (for ByCalculation option). -->
+<!-- RowPageLocation enumeration: "First" moves to first record/request/page (Browse: first record in file or found set; Find: first find request; Preview: first page); "Last" moves to last record/request/page; "Previous" moves to previous record/request/page; "Next" moves to next record/request/page; "ExitAfterLast" exits script when reaches last record in found set (use with Next or Previous; useful within loop to exit after last record); "ByCalculation" uses calculation to determine record number, request number, or page number (dialog confirmation if NoInteract is False). -->
+<!-- NoInteract state: "True" suppresses dialog (uses calculation result directly). "False" shows dialog for user to confirm number. -->
+<!-- Optional: RowPageLocation (defaults to specific navigation method), Calculation (for ByCalculation option), NoInteract. -->
 <!-- Moves to a record or report page, or displays a find request. In Browse mode: moves to record; in Find mode: displays find request; in Preview mode: moves to report page. -->
 <!-- Server-side scripts, Data API, and CWP: do not support ByCalculation option. -->
 <!-- Partial support on Server (no ByCalculation), Cloud (no ByCalculation), Data API (no ByCalculation), and CWP (no ByCalculation). -->

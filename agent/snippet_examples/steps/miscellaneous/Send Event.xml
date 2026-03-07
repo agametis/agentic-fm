@@ -2,8 +2,8 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="57" name="Send Event">
     <ContentType value="Text"/>
-    <Text/>
-    <Event CopyResultToClipboard="False" WaitForCompletion="True" BringTargetToForeground="False" TargetType="NUTD" TargetName="&lt;unknown&gt;" id="dosc" class="misc"/>
+    <Text></Text>
+    <Event CopyResultToClipboard="False" WaitForCompletion="True" BringTargetToForeground="True" TargetType="????" TargetName="&lt;unknown&gt;" id="dosc" class="misc"/>
   </Step>
 </fmxmlsnippet>
 <!-- ContentType enumeration: "Text" uses manual text entry; "Calculation" generates message from calculation. -->

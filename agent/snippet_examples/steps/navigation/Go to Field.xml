@@ -5,8 +5,8 @@
     <Field table="" id="0" name=""/>
   </Step>
 </fmxmlsnippet>
-<!-- SelectAll state: "True" selects all contents of field (Select/perform). "False" does not select contents. -->
-<!-- Optional: Field (target field). When omitted, exits the current field and implicitly commits the record if it was open for editing. -->
+<!-- SelectAll state: "True" selects all contents of field (opens document ready for editing). "False" does not select contents. -->
+<!-- Required: Field (target field to move to). -->
 <!-- Moves to the specified field on current layout. -->
 <!-- If field is on tab panel or slide panel that is not frontmost, specified field is selected and panel moves to front. However, if same field appears elsewhere on layout and script finds that field first, panel with that field will not come forward. To force specific field, assign object name and use Go to Object script step (can also specify repetition for repeating field). -->
 <!-- When layout contains multiple instances of field, first visible instance (based on creation order) will have focus. To specify particular instance, use Go to Object script step. -->

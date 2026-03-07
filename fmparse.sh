@@ -35,6 +35,8 @@ PROJECT_ROOT="$SCRIPT_DIR"
 
 XML_EXPORTS_DIR="$PROJECT_ROOT/xml_exports"
 XML_PARSED_DIR="$PROJECT_ROOT/agent/xml_parsed"
+DUCKDB_MAIN="$PROJECT_ROOT/duckdb/main.mjs"
+PACKAGE_JSON="$PROJECT_ROOT/package.json"
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -57,11 +59,6 @@ Usage: $(basename -- "$0") -s <solution-name> <path-to-export> [options]
 Parse a FileMaker XML export and archive it under a solution-specific, dated
 folder in xml_exports/. The export is then exploded into agent/xml_parsed/
 using fm-xml-export-exploder.
-
-Supports the FileMaker data separation model: each solution file (e.g.
-UI.fmp12, Data.fmp12) is parsed independently. Only the subdirectories
-matching the given solution name are cleared — other solutions' data in
-xml_parsed/ is preserved.
 
 Exports are archived as:  xml_exports/<solution-name>/YYYY-MM-DD/
 
@@ -235,17 +232,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3: Clear xml_parsed for this solution only
-# ---------------------------------------------------------------------------
-# Supports multi-file solutions (data separation model). Each domain
-# subdirectory (scripts/, tables/, layouts/, etc.) contains a subfolder per
-# solution name. Only the current solution's subfolders are removed so that
-# other solution files (e.g. Data.fmp12 alongside UI.fmp12) are preserved.
+# Step 3: Clear xml_parsed
 # ---------------------------------------------------------------------------
 if [[ -d "$XML_PARSED_DIR" ]]; then
-    # Remove only subdirectories named after this solution, preserving other solutions
-    find "$XML_PARSED_DIR" -mindepth 2 -maxdepth 2 -type d -name "$SOLUTION_NAME" -exec rm -rf {} +
-    msg "Cleared agent/xml_parsed/*/$SOLUTION_NAME/"
+    # Clear contents safely without fragile glob expansion.
+    find "$XML_PARSED_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    msg "Cleared agent/xml_parsed/"
 else
     mkdir -p "$XML_PARSED_DIR"
     msg "Created agent/xml_parsed/"
@@ -384,5 +376,37 @@ fi
 # Step 7: Regenerate context index files
 # ---------------------------------------------------------------------------
 echo ""
-msg "Running fmcontext.sh to regenerate agent/context/$SOLUTION_NAME/..."
-"$SCRIPT_DIR/fmcontext.sh" -s "$SOLUTION_NAME"
+msg "Running fmcontext.sh to regenerate agent/context/..."
+"$SCRIPT_DIR/fmcontext.sh"
+
+# ---------------------------------------------------------------------------
+# Step 7: Refresh DuckDB index cache (create/update automatically)
+# ---------------------------------------------------------------------------
+echo ""
+msg "Running DuckDB index sync..."
+
+if [[ ! -f "$PACKAGE_JSON" ]]; then
+    error "package.json not found at project root. DuckDB indexing requires Node.js project setup."
+fi
+
+if [[ ! -f "$DUCKDB_MAIN" ]]; then
+    error "DuckDB runtime entrypoint missing: duckdb/main.mjs"
+fi
+
+if ! command -v npm &>/dev/null; then
+    error "npm is not installed or not on PATH. Install Node.js/npm to enable automatic DuckDB indexing."
+fi
+
+pushd "$PROJECT_ROOT" >/dev/null
+
+if ! npm run -s duckdb:index -- --solution "$SOLUTION_NAME" --mode full --quiet; then
+    npm run -s duckdb:session:stop -- --quiet >/dev/null 2>&1 || true
+    popd >/dev/null
+    error "DuckDB index sync failed. Check Node.js dependencies (`npm install`) and retry."
+fi
+
+# Stop the daemon after indexing; cache remains persisted in duckdb-session/.
+npm run -s duckdb:session:stop -- --quiet >/dev/null 2>&1 || true
+popd >/dev/null
+
+msg "DuckDB index synchronized."

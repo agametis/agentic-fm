@@ -5,7 +5,7 @@
     <UniversalPathList>$path</UniversalPathList>
   </Step>
 </fmxmlsnippet>
-<!-- CreateDirectories state: "True" creates folders in the path if they don't exist (HR: Create folders: On). "False" does not (HR: Create folders: Off). -->
+<!-- CreateDirectories state: "True" creates folders in the path if they don't exist. "False" does not. -->
 <!-- Required: UniversalPathList (file path for the new data file). -->
 <!-- Optional: CreateDirectories. -->
 <!-- Creates an empty, closed data file. Use Open Data File to open it and Write to Data File to add data. -->

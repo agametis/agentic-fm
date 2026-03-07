@@ -5,7 +5,4 @@
     <FlushSQLData state="False"/>
   </Step>
 </fmxmlsnippet>
-<!-- Option state: "True" flushes cached join results and re-evaluates relationships. "False" does not. -->
-<!-- FlushSQLData state: "True" flushes cached external data (ODBC/JDBC). "False" does not. FlushSQLData requires Option to also be "True". -->
-<!-- Both elements are optional (default "False"). In HR, each label appears only when enabled; both omitted shows empty brackets. -->
 <!-- See https://help.claris.com/en/pro-help/content/refresh-window.html -->

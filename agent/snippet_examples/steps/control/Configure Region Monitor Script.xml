@@ -19,11 +19,9 @@
     </MonitorType>
   </Step>
 </fmxmlsnippet>
-<!-- MonitorType value: "iBeacon" | "GeoLocation" (HR: Geofence) | "Clear". Clear stops monitoring the named region. -->
+<!-- MonitorType value: "iBeacon" | "geofence" | "Clear". Clear stops monitoring the named region. -->
 <!-- iBeacon children: RangeName (required, unique per monitor), ProximityUUID (required), MajorID (optional, 0-65535), MinorID (optional, 0-65535). -->
-<!-- GeoLocation children: RangeName (required, unique per monitor), Latitude (required), Longitude (required), Radius (required, meters, > 0). -->
-<!-- <Text/> element appears as empty sibling when child params exist. -->
-<!-- <Calculation> for script parameter is a top-level sibling (not inside MonitorType). Only shown in HR as "Parameter:" when non-empty. -->
-<!-- Script element is optional; Script: label only appears in HR when specified. -->
+<!-- geofence children: RangeName (required, unique per monitor), Latitude (required), Longitude (required), Radius (required, meters, > 0). -->
+<!-- Script parameter (Text element) is optional. -->
 <!-- FileMaker Go only. Up to 20 regions can be monitored at a time. -->
 <!-- See https://help.claris.com/en/pro-help/content/configure-region-monitor-script.html -->

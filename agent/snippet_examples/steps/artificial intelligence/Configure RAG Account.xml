@@ -2,20 +2,6 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="227" name="Configure RAG Account ">
     <VerifySSLCertificates state="False"/>
-    <ConfigureRAGAccount>
-      <RAGAccountName>
-        <Calculation><![CDATA["rag_account_name"]]></Calculation>
-      </RAGAccountName>
-      <Endpoint>
-        <Calculation><![CDATA["endpoint"]]></Calculation>
-      </Endpoint>
-      <AccessAPIKey>
-        <Calculation><![CDATA["api_key"]]></Calculation>
-      </AccessAPIKey>
-    </ConfigureRAGAccount>
+    <ConfigureRAGAccount/>
   </Step>
 </fmxmlsnippet>
-<!-- Note: Step name has a trailing space: "Configure RAG Account ". This is canonical. -->
-<!-- VerifySSLCertificates state: "True" verifies SSL certificates. "False" skips verification. Sibling of ConfigureRAGAccount. -->
-<!-- All child params (RAGAccountName, Endpoint, AccessAPIKey) are inside <ConfigureRAGAccount>. -->
-<!-- All params are optional; an empty <ConfigureRAGAccount/> is valid. -->

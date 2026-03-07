@@ -12,14 +12,15 @@
     <Animation value="None"/>
   </Step>
 </fmxmlsnippet>
-<!-- Option state: "True" shows only related records (Show only related records). "False" does not filter. -->
-<!-- MatchAllRecords state: "True" matches all records in current found set (Match found set). "False" matches current record only. -->
-<!-- ShowInNewWindow state: "True" shows related records in new window (New window). "False" shows in current window. -->
-<!-- LayoutDestination value: "CurrentLayout" | "SelectedLayout" | "LayoutNameByCalc" | "LayoutNumberByCalc" | "UseExternalTableLayouts" -->
-<!-- NewWndStyles attributes: Style ("Document" | "Floating" | "Dialog" | "Card"), Close/Minimize/Maximize/Resize ("Yes" | "No"), DimParentWindow/Toolbars/MenuBar ("Yes" | "No"), Styles (numeric bitmask). Only applies when ShowInNewWindow is True. -->
-<!-- Animation value: "SlideFromLeft" | "SlideFromRight" | "SlideFromBottom" | "SlideToLeft" | "SlideToRight" | "SlideToBottom" | "FlipFromLeft" | "FlipFromRight" | "ZoomIn" | "ZoomOut" | "CrossDissolve". FileMaker Go only. -->
-<!-- Required: Table (source relationship to go to). -->
-<!-- Optional: Layout, Option (Show only related records), MatchAllRecords (Match found set), ShowInNewWindow (New window), Animation (Go only), NewWndStyles, Name/Height/Width/DistanceFromTop/DistanceFromLeft (window params when ShowInNewWindow). -->
+<!-- Option state: "True" shows only related records (creates new found set in related table; first record becomes current). "False" makes first record in table's unsorted order current. -->
+<!-- MatchAllRecords state: "True" matches all records in current found set (creates new found set in related table matching all records in current found set). "False" matches current record only (creates new found set containing records matching only current record). -->
+<!-- ShowInNewWindow state: "True" shows related records in new window with specified settings. "False" shows in current window. -->
+<!-- Restore state: "True" uses stored/specified settings. "False" does not restore stored settings. -->
+<!-- LayoutDestination enumeration: "SelectedLayout" specifies layout by name from current file; "UseExternalTableLayouts" opens file containing external table and lets you choose layout from that file (only available if source relationship references table in another file). -->
+<!-- NewWndStyles attributes: Style ("Document"/etc), Close ("Yes"/"No"), Minimize ("Yes"/"No"), Maximize ("Yes"/"No"), Resize ("Yes"/"No"), Styles (numeric style flags). -->
+<!-- Animation value: specifies animation for displaying records (FileMaker Go only; value "None" or animation type). -->
+<!-- Required: Table (source relationship; specifies related table to go to; id should be populated with table ID). -->
+<!-- Optional: Layout (layout in current file to display related records), LayoutDestination, ShowInNewWindow, Option (show only related records), MatchAllRecords, Animation (FileMaker Go only), NewWndStyles. -->
 <!-- Goes to current related record(s) in related table. -->
 <!-- Example: from Invoices table viewing specific invoice, button set to Go to Related Record [Customers] determines which customer record current invoice is related to and goes to that record in Customers table. If record not in Customers found set, script can perform find to make record current. -->
 <!-- Works with portal rows: if used from active portal row and portal's table is related table, related record in that table is made current. If portal's table is not related table, first related record in found set is made current. -->

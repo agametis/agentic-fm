@@ -15,7 +15,7 @@
 </fmxmlsnippet>
 <!-- Pause state: "True" pauses the script to allow users to enter a find request. "False" does not pause. -->
 <!-- Restore state: "True" uses stored/specified find requests. "False" does not restore stored find requests. -->
-<!-- RequestRow operation attribute: "Include" finds records matching criteria (Find Records action); "Exclude" omits records matching criteria (Omit Records action). -->
+<!-- RequestRow operation attribute: "Include" finds records matching criteria (Find Records action); "Omit" omits records matching criteria (Omit Records action). -->
 <!-- Optional: Pause, Query (with RequestRow elements containing Criteria; can define multiple find requests to find and omit records from single script step). -->
 <!-- Switches to Find mode. -->
 <!-- When Restore is enabled, FileMaker Pro displays current find request(s) if any. Additional find requests can be defined, and existing requests can be duplicated, edited, or deleted. -->

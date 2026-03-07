@@ -2,26 +2,26 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="144" name="Save Records as PDF">
     <NoInteract state="True"/>
-    <Option state="False"/>
+    <Option state="True"/>
     <CreateDirectories state="True"/>
     <Restore state="True"/>
     <AutoOpen state="False"/>
     <CreateEmail state="False"/>
     <UniversalPathList>$output</UniversalPathList>
-    <Calculation><![CDATA["title"]]></Calculation>
+    <Calculation><![CDATA[]]></Calculation>
     <PDFOptions source="RecordsBeingBrowsed">
       <Document>
         <Title>
-          <Calculation><![CDATA["title"]]></Calculation>
+          <Calculation><![CDATA[]]></Calculation>
         </Title>
         <Subject>
-          <Calculation><![CDATA["subject"]]></Calculation>
+          <Calculation><![CDATA[]]></Calculation>
         </Subject>
         <Author>
-          <Calculation><![CDATA["author"]]></Calculation>
+          <Calculation><![CDATA[]]></Calculation>
         </Author>
         <Keywords>
-          <Calculation><![CDATA["keywords"]]></Calculation>
+          <Calculation><![CDATA[]]></Calculation>
         </Keywords>
         <Pages AllPages="True">
           <NumberFrom>
@@ -35,29 +35,23 @@
   </Step>
 </fmxmlsnippet>
 <!-- NoInteract state: "True" suppresses dialog boxes (if file already specified). "False" displays dialog boxes when script step is performed. -->
-<!-- Option state: "True" appends to existing PDF (Append). "False" creates new PDF or overwrites existing. When appending: Document and Initial View tab settings ignored; Security tab settings not applied; if PDF is password-protected, password must match. -->
+<!-- Option state: "True" appends records being browsed, current record, or blank record after last page of specified PDF file (Document and Initial View tab settings ignored; Security tab settings not applied; if PDF already password-protected, Security tab password must match). "False" creates new PDF or overwrites existing. -->
 <!-- CreateDirectories state: "True" creates new folders specified in output file path. "False" does not create folders. -->
 <!-- Restore state: "True" uses stored/specified options. "False" does not restore stored options. -->
 <!-- AutoOpen state: "True" automatically opens output file with default application. "False" does not open file. -->
 <!-- CreateEmail state: "True" displays new email message in user's default email application with output file attached. "False" does not create email. -->
-<!-- Calculation (sibling before PDFOptions): label/title for the stored PDF specification shown in the UI. Only present when Restore state="True". -->
-<!-- PDFOptions source attribute: "RecordsBeingBrowsed" | "CurrentRecord" | "BlankRecord" -->
-<!-- PDFOptions appearance attribute (BlankRecord only): "AsFormatted" | "WithBoxes" | "WithUnderlines" | "WithPlaceholderText" -->
-<!-- Pages AllPages attribute: "True" saves all pages. "False" saves specified page range (uses NumberFrom and optionally PageRange/From/To). -->
-<!-- Security attributes:
-  allowScreenReader: "True" | "False"
-  enableCopying: "True" | "False"
-  controlEditing: "AnyExceptExtractingPages" | "NotPermitted"
-  controlPrinting: "HighResolution" | "NotPermitted"
-  requireControlEditPassword: "True" | "False" — when True, add <ControlPassword><Calculation><![CDATA["password"]]></Calculation></ControlPassword>
-  requireOpenPassword: "True" | "False" — when True, add <OpenPassword><Calculation><![CDATA["password"]]></Calculation></OpenPassword>
--->
-<!-- View attributes:
-  magnification: "25" | "50" | "75" | "100" | "125" | "150" | "200" | "400" | "800" | "FitVisible" | "FitWidth" | "FitPage" | "Default"
-  pageLayout: "SinglePage" | "Default" | "Continuous" | "Facing" | "ContinuousFacing"
-  show: "PagesPanelAndPage" | "PageOnly" | "BookmarksPanelAndPage"
--->
-<!-- Required: UniversalPathList (output file path). -->
-<!-- Optional: NoInteract, Option (Append), CreateDirectories, Restore, AutoOpen, CreateEmail, Calculation (stored label), PDFOptions (with Document, Security, View elements). -->
-<!-- Document elements: Title, Subject, Author, Keywords (all calculated), Pages (AllPages; when False use NumberFrom and PageRange). -->
+<!-- PDFOptions source attribute: "RecordsBeingBrowsed" saves records being browsed; "CurrentRecord" saves current record only; "BlankRecord" saves blank record (enables Appearance list for field formatting options). -->
+<!-- Pages AllPages attribute: "True" saves all pages. "False" saves specified page range (uses NumberFrom and optionally NumberTo). -->
+<!-- Security attributes: allowScreenReader ("True" allows screen reader software, "False" does not); enableCopying ("True" allows copying, "False" does not); controlEditing (edit privileges: "AnyExceptExtractingPages", "None", etc.); controlPrinting (print privileges: "HighResolution", "LowResolution", "None"); requireControlEditPassword ("True" requires password for editing, "False" does not); requireOpenPassword ("True" requires password to open, "False" does not). -->
+<!-- View attributes: magnification (zoom percentage: "100", "FitPage", "FitWidth", etc.); pageLayout (page display: "SinglePage", "Continuous", "TwoUp", etc.); show (initial view: "PagesPanelAndPage", "PageOnly", etc.). -->
+<!-- Required: UniversalPathList (output file path; can specify multiple paths one per line; FileMaker Pro uses first path it locates). -->
+<!-- Optional: NoInteract, Option (append to existing PDF), CreateDirectories, Restore (specify options), AutoOpen, CreateEmail, Calculation, PDFOptions (with Document, Security, View elements). Document elements: Title, Subject, Author, Keywords (all text or calculated), Pages (AllPages, NumberFrom, NumberTo). -->
+<!-- Saves records to specified PDF file. -->
+<!-- If script does not specify absolute path and database file containing script is hosted, path is assumed to be current user's Documents folder. -->
+<!-- Operates in all modes except Find mode. -->
+<!-- Privilege set must include "Allow printing" or script must be set to run with full access privileges. -->
+<!-- FileMaker Go: CreateDirectories not supported; Initial View tab options not supported; if output file path not specified, uses window name to save PDF; when appending records, Document tab options not ignored but won't overwrite fields with existing data; when appending, only paths in Documents and temporary folders supported. -->
+<!-- Server and Cloud: NoInteract "False" (With dialog: On) not supported; only certain folders accessible (see Paths in server-side scripts); AutoOpen and CreateEmail not supported; Print Setup script step sets options for this step; if fonts don't display correctly, ensure required fonts installed and available to Web Publishing Engine; Append to existing PDF only supported when appending to PDFs previously created within same script; if step performs multiple times without Append to existing PDF, use unique filename for each instance (otherwise most recent overwrites older PDFs); if file path not specified, default filename is "Untitled.pdf"; web viewers don't display content in PDFs. -->
+<!-- WebDirect: not supported on mobile devices; saved files download to web browser's default download location; CreateDirectories not supported; AutoOpen and CreateEmail not supported; Print Setup script step sets options; font display considerations; Append to existing PDF support limitations; unique filename requirement; default filename behavior; web viewer limitations. -->
+<!-- Partial support on Go (no CreateDirectories, Initial View; path/append limitations), WebDirect (no mobile, no CreateDirectories, AutoOpen, CreateEmail; download location), Server (no dialog, restricted folders, no AutoOpen/CreateEmail), and Cloud (no dialog, restricted folders, no AutoOpen/CreateEmail). Supported on Data API. Not supported on CWP. -->
 <!-- See https://help.claris.com/en/pro-help/content/save-records-as-pdf.html -->

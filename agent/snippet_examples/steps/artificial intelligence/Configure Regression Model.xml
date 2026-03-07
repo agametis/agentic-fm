@@ -4,15 +4,6 @@
     <LLMTrain>
       <LLMTrainAction>LLMTrainTrainModel</LLMTrainAction>
       <LLMAlgorithm>LLMTrainAlgForest</LLMAlgorithm>
-      <LLMTrainModelName>
-        <Calculation><![CDATA["model_name"]]></Calculation>
-      </LLMTrainModelName>
     </LLMTrain>
   </Step>
 </fmxmlsnippet>
-<!-- LLMTrainAction: "LLMTrainTrainModel" (HR: Train Model) | "LLMTrainSaveModel" (HR: Save Model) | "LLMTrainLoadModel" (HR: Load Model) | "LLMTrainUnloadModel" (HR: Unload Model). -->
-<!-- LLMAlgorithm: "LLMTrainAlgForest" (HR: Random Forest). Always present in XML even when not shown in HR. -->
-<!-- All child params (LLMTrainAction, LLMAlgorithm, LLMTrainModelName) are inside <LLMTrain>. -->
-<!-- For Save Model / Load Model: <Field> element is a sibling of <LLMTrain>. Can be a field reference (table/id/name attrs) or variable (<Field>$variable</Field> with <Text/>). Supports repetition attribute. -->
-<!-- HR label for Field changes by action: "Save Model To" for Save, "Load Model From" for Load. -->
-<!-- Algorithm is only shown in HR for Train Model action. -->

@@ -7,8 +7,8 @@
     </Profile>
   </Step>
 </fmxmlsnippet>
-<!-- NoInteract state: "True" suppresses dialogs (HR: With dialog: Off). "False" shows dialogs (HR: With dialog: On). -->
-<!-- Profile QueryType: "Query" (HR: SQL Text) with <Query> child containing literal SQL. "Calculation" (HR: Calculated SQL Text) with <QueryCalc><Calculation> child. -->
+<!-- NoInteract state: "True" suppresses the Specify SQL dialog, Select ODBC Data Source dialog, and password dialog. "False" shows the dialogs. -->
+<!-- Profile QueryType: "Query" | other values may exist for different query types. -->
 <!-- Profile dsn: ODBC data source name. Profile UserName and password: credentials. Select "Save user name and password" if NoInteract is "True". -->
 <!-- Query element: contains SQL statement (manually entered or calculated). Maximum 256 K characters (512 KB). -->
 <!-- Executes SQL statements on ODBC data sources (not FileMaker data sources; use ExecuteSQL function for FileMaker SELECT queries). -->

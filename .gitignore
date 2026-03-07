@@ -3,18 +3,22 @@ xml_exports/
 agent/xml_parsed/
 agent/context/
 agent/CONTEXT.json
-agent/sandbox/
 .private/
 .venv/
 .cursor/in-development/
 external_tools/
 plans/
+duckdb-session/
+agent/sandbox/
 
 # Generated Claris documentation (copyright Claris International Inc.)
 # Run agent/docs/filemaker/fetch_docs.py to generate locally.
 agent/docs/filemaker/script-steps/
 agent/docs/filemaker/functions/
 agent/docs/filemaker/error-codes.md
+
+# Generated MBS documentation
+agent/docs/mbs/
 
 # Specific files
 PROJECT.md
@@ -30,6 +34,7 @@ agent/config/webviewer-system-prompt.md
 agent/config/fmlint.config.json
 docker-compose.override.yml
 project.env
+!/package-lock.json
 
 # macOS
 .DS_Store
@@ -58,6 +63,7 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 package-lock.json
+!/package-lock.json
 !website/package-lock.json
 yarn.lock
 pnpm-lock.yaml

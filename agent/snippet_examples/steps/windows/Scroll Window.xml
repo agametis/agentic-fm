@@ -4,5 +4,5 @@
     <ScrollOperation value="Home"/>
   </Step>
 </fmxmlsnippet>
-<!-- ScrollOperation value: "Home" | "End" | "PageUp" | "PageDown" | "ToSelection" -->
+<!-- ScrollOperation value: "Home" | End | PageUp | PageDown | "ToSelection" -->
 <!-- See https://help.claris.com/en/pro-help/content/scroll-window.html -->

@@ -10,7 +10,8 @@
 <!-- CreateDirectories state: "True" creates new folders specified in output file path. "False" does not create folders. -->
 <!-- CreateEmail state: "True" displays new email message in user's default email application with output file attached. "False" does not create email. -->
 <!-- SaveType enumeration: "BrowsedRecords" saves entire found set of records; "CurrentRecord" saves only current record. -->
-<!-- Optional: UniversalPathList (output file path; if omitted, Save Records as Snapshot Link dialog is shown), CreateDirectories, CreateEmail, SaveType. -->
+<!-- Required: UniversalPathList (output file path; can specify multiple paths one per line; FileMaker Pro uses first path it locates). -->
+<!-- Optional: CreateDirectories, CreateEmail, SaveType. -->
 <!-- Saves found set of records to FileMaker Pro Snapshot Link (FMPSL) file. -->
 <!-- If script does not specify absolute path and database file containing script is hosted, path is assumed to be current user's Documents folder. -->
 <!-- Operates in all modes except Find mode. -->

@@ -2,9 +2,6 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="209" name="Set Dictionary">
     <MainDictionary value="US English"/>
-    <UniversalPathList>$userDictionaryPath</UniversalPathList>
   </Step>
 </fmxmlsnippet>
-<!-- MainDictionary value: "US English" | "UK English" | "US English (Medical)" | "Deutsch (Alte Regeln)" | "Deutsch (Neue Regeln)" | "Schweizerdeutsch" | "Espa&#xF1;ol" | "Fran&#xE7;ais" | "Italiano" | "Nederlands" | "Portugu&#xEA;s (Brasil)" | "Portugu&#xEA;s (Portugal)" | "Svenska" -->
-<!-- Optional: UniversalPathList (path to user dictionary file). If omitted, no user dictionary is used. -->
 <!-- See https://help.claris.com/en/pro-help/content/set-dictionary.html -->

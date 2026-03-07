@@ -14,10 +14,10 @@
     </AddAccount>
   </Step>
 </fmxmlsnippet>
-<!-- AccountType: "FileMaker" | "ExternalServer" | "AppleID" | "Amazon" | "Google" | "Azure" | "AzureGroup" | "CustomOauth" | "CustomOauthGroup" -->
+<!-- AccountType: "FileMaker" | "ExternalServer" | "AppleID" | "Amazon" | "Google" | "MicrosoftEntraID" | "CustomOAuth" -->
 <!-- ChgPwdOnNextLogin value: "True" forces password change on next login. "False" does not. FileMaker type only. -->
 <!-- Required: AccountType, PrivilegeSet. -->
-<!-- For FileMaker: AccountName, Password. For ExternalServer/AzureGroup/CustomOauthGroup: GroupName (instead of AccountName). For AppleID/Amazon/Google/Azure/CustomOauth: AccountName. -->
+<!-- For FileMaker: AccountName, Password. For ExternalServer/MicrosoftEntraID/CustomOAuth groups: GroupName (instead of AccountName). For AppleID/Amazon/Google: AccountName (user's email). -->
 <!-- Optional: ChgPwdOnNextLogin (FileMaker type only). -->
 <!-- The Full Access privilege set cannot be assigned via this script step. -->
 <!-- Each AccountName and GroupName must be unique across both types in the current file. -->

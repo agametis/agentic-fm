@@ -9,31 +9,47 @@
     </DeviceOptions>
   </Step>
 </fmxmlsnippet>
-<!-- InsertFrom value: "Camera" | "Video Camera" | "Microphone" | "Photo Library" | "Music Library" | "Barcode" | "Signature" -->
-<!-- Camera choice: "Back" | "Front". Applies to Camera, Video Camera, and Barcode (with ScanFrom type="Camera"). -->
-<!-- Resolution choice: "Full" | "Large" | "Medium" | "Small". Applies to Camera, Video Camera, and Barcode (with ScanFrom type="Camera"). -->
-<!-- Required: Field (target container field, or text field for barcodes). -->
-<!-- DeviceOptions children vary by InsertFrom type (see below). -->
+<!-- InsertFrom value: "Camera" | "VideoCamera" | "Microphone" | "PhotoLibrary" | "MusicLibrary" | "BarcodeScanCamera" | "BarcodeScanField" | "Signature" -->
+<!-- Camera choice: "Back" | "Front" -->
+<!-- Resolution choice: "Full" | "Large" | "Medium" | "Small" -->
+<!-- Optional: Field (target container or text field for barcodes). If omitted, the active container/text field is used; returns an error if field not on layout. -->
+<!-- Optional DeviceOptions children (depend on InsertFrom): Camera, Resolution, MaxDuration (calculation, seconds), StartImmediately, BarcodeTypes, Title, Message, Prompt, Presentation. -->
+<!-- Signature Presentation: "FullScreen" | "Overlay" | "Embedded" (falls back to Overlay if container is too small). -->
 <!-- FileMaker Go only; not supported on Pro, WebDirect, Server, Cloud, Data API, or CWP. -->
+<!-- Barcode in container field: image stored, text value retrievable via GetAsText; barcode type via GetContainerAttribute. In text field: only the text value is inserted. -->
 
-<!-- Camera: Camera, Resolution -->
+<!-- <InsertFrom value="Music Library"/> -->
 
-<!-- Music Library: (no DeviceOptions) -->
+<!-- <InsertFrom value="Photo Library"/> -->
 
-<!-- Photo Library: (no DeviceOptions) -->
+<!-- DeviceOptions for Video Camera -->
+<!-- <Resolution choice="Full"/> -->
+<!-- <MaxDuration state="True"> -->
+<!-- <Calculation><![CDATA[60]]></Calculation> -->
+<!-- </MaxDuration> -->
+<!-- <StartImmediately state="True"/> -->
 
-<!-- Video Camera: Camera, Resolution, MaxDuration, StartImmediately -->
-<!-- MaxDuration state: "True" enables max duration with Calculation child (seconds). "False" no limit. -->
-<!-- StartImmediately state: "True" starts recording immediately. "False" waits for user. -->
+<!-- DeviceOptions for Microphone -->
+<!-- <MaxDuration state="True"> -->
+<!-- <Calculation><![CDATA[60]]></Calculation> -->
+<!-- </MaxDuration> -->
 
-<!-- Microphone: MaxDuration, StartImmediately -->
+<!-- DeviceOptions for Barcode -->
+<!-- <ScanFrom type="Camera"/> -->
+<!-- <Camera choice="Back"/> -->
+<!-- <Resolution choice="Full"/> -->
+<!-- <Barcodes types="4194303"/> -->
 
-<!-- Barcode: ScanFrom, Camera (when ScanFrom type="Camera"), Resolution (when ScanFrom type="Camera"), Barcodes -->
-<!-- ScanFrom type: "Camera" (scan with device camera) | "Field" (scan from container field; has Field child element). -->
-<!-- Barcodes types: numeric bitmask for enabled barcode types. "4194303" (0x3FFFFF) = all 22 types enabled. -->
-<!-- Barcode types (bit positions): Code 39, Code 93, Code 128, EAN-8, EAN-13, EAN/UPC Composite, GS1 2-Digit Add-On, GS1 5-Digit Add-On, GS1 DataBar Expanded, GS1 DataBar (RSS), Interleaved 2 of 5, ISBN-10 (from EAN-13), ISBN-13 (from EAN-13), QR Code, UPC-A, UPC-E, Codabar, PDF417, ITF-14, Aztec, Data Matrix, GS1 DataBar Limited. -->
-
-<!-- Signature: Title (Calculation), Message (Calculation), Prompt (Calculation), Presentation -->
-<!-- Presentation choice: "Full Screen" | "Overlay" | "Embedded". Falls back to Overlay if container is too small. -->
+<!-- DeviceOptions for Signature -->
+<!-- <Title> -->
+<!-- <Calculation><![CDATA["title"]]></Calculation> -->
+<!-- </Title> -->
+<!-- <Message> -->
+<!-- <Calculation><![CDATA["message"]]></Calculation> -->
+<!-- </Message> -->
+<!-- <Prompt> -->
+<!-- <Calculation><![CDATA["prompt"]]></Calculation> -->
+<!-- </Prompt> -->
+<!-- <Presentation choice="Full Screen"/> -->
 
 <!-- See https://help.claris.com/en/pro-help/content/insert-from-device.html -->
