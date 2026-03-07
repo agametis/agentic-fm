@@ -20,6 +20,20 @@ Recommended aliases:
 ```bash
 git config alias.lg "log --oneline --decorate --graph --all"
 git config alias.upsync "!git fetch upstream && git checkout main && git rebase upstream/main"
+git config alias.upcheck "!git fetch upstream && git rev-list --left-right --count main...upstream/main"
+```
+
+These are Git aliases created with `git config`. They are not stored automatically in the repository. They live in your Git configuration on the current computer.
+
+If you set them without `--global`, they are stored only for this repository.
+If you set them with `--global`, they are available in all repositories on that computer.
+
+To recreate the same aliases on another computer, run the same commands again inside the repository:
+
+```bash
+git config alias.lg "log --oneline --decorate --graph --all"
+git config alias.upsync "!git fetch upstream && git checkout main && git rebase upstream/main"
+git config alias.upcheck "!git fetch upstream && git rev-list --left-right --count main...upstream/main"
 ```
 
 ### When the original repo has new updates
@@ -95,6 +109,20 @@ git checkout main
 git merge my-feature
 git branch -d my-feature
 ```
+
+### Quick upstream check
+
+To see whether the original repository has moved ahead of your `main` branch:
+
+```bash
+git upcheck
+```
+
+Interpretation:
+
+- `2 0` = your `main` is 2 commits ahead, upstream has no newer commits
+- `2 3` = your `main` is 2 commits ahead, upstream has 3 newer commits
+- `0 5` = upstream has 5 newer commits and you have nothing on top
 
 ## Prepare the FileMaker data Python environment and download the FileMaker documentation.
 
