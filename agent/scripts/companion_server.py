@@ -20,8 +20,10 @@ import argparse
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
@@ -32,7 +34,14 @@ from socketserver import ThreadingMixIn
 
 DEFAULT_PORT = 8765
 BIND_HOST = "127.0.0.1"
-VERSION = "1.0"
+VERSION = "1.1"
+
+# ---------------------------------------------------------------------------
+# Webviewer process state (module-level, shared across request threads)
+# ---------------------------------------------------------------------------
+
+_webviewer_proc: "subprocess.Popen | None" = None
+_webviewer_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -73,12 +82,20 @@ class CompanionHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self._handle_health()
+        elif self.path == "/webviewer/status":
+            self._handle_webviewer_status()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
     def do_POST(self):
         if self.path == "/explode":
             self._handle_explode()
+        elif self.path == "/debug":
+            self._handle_debug()
+        elif self.path == "/webviewer/start":
+            self._handle_webviewer_start()
+        elif self.path == "/webviewer/stop":
+            self._handle_webviewer_stop()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -176,6 +193,87 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         self._send_json(response, status=status)
 
+    def _handle_debug(self):
+        try:
+            body = self._read_body()
+            payload = json.loads(body)
+        except (ValueError, OSError) as exc:
+            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            return
+
+        # Resolve repo root from script location
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.dirname(os.path.dirname(script_dir))
+        debug_dir = os.path.join(repo_root, "agent", "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        output_path = os.path.join(debug_dir, "output.json")
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+
+        log.info("Debug output written to %s", output_path)
+        self._send_json({"success": True, "path": output_path})
+
+    def _handle_webviewer_status(self):
+        global _webviewer_proc
+        with _webviewer_lock:
+            running = _webviewer_proc is not None and _webviewer_proc.poll() is None
+        self._send_json({"running": running})
+
+    def _handle_webviewer_start(self):
+        global _webviewer_proc
+        try:
+            body = self._read_body()
+            payload = json.loads(body) if body else {}
+        except (ValueError, OSError) as exc:
+            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            return
+
+        repo_path = payload.get("repo_path", "")
+        if not repo_path:
+            self._send_json({"success": False, "error": "Missing required field: repo_path"}, status=400)
+            return
+
+        repo_path = os.path.expanduser(repo_path)
+        webviewer_path = os.path.join(repo_path, "webviewer")
+
+        with _webviewer_lock:
+            if _webviewer_proc is not None and _webviewer_proc.poll() is None:
+                self._send_json({"success": True, "status": "already_running"})
+                return
+
+            try:
+                proc = subprocess.Popen(
+                    ["npm", "run", "dev"],
+                    cwd=webviewer_path,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                _webviewer_proc = proc
+                log.info("Started webviewer (pid=%d) in %s", proc.pid, webviewer_path)
+                self._send_json({"success": True, "status": "started", "pid": proc.pid})
+            except Exception as exc:
+                log.exception("Failed to start webviewer: %s", exc)
+                self._send_json({"success": False, "error": str(exc)}, status=500)
+
+    def _handle_webviewer_stop(self):
+        global _webviewer_proc
+        with _webviewer_lock:
+            if _webviewer_proc is None or _webviewer_proc.poll() is not None:
+                self._send_json({"success": True, "status": "not_running"})
+                return
+
+            try:
+                pgid = os.getpgid(_webviewer_proc.pid)
+                os.killpg(pgid, signal.SIGTERM)
+                _webviewer_proc = None
+                log.info("Stopped webviewer (process group %d)", pgid)
+                self._send_json({"success": True, "status": "stopped"})
+            except Exception as exc:
+                log.exception("Failed to stop webviewer: %s", exc)
+                self._send_json({"success": False, "error": str(exc)}, status=500)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -219,7 +317,7 @@ def main():
     server = ThreadingHTTPServer((BIND_HOST, port), CompanionHandler)
 
     log.info("companion_server v%s listening on %s:%d", VERSION, BIND_HOST, port)
-    log.info("Endpoints: GET /health  POST /explode")
+    log.info("Endpoints: GET /health  GET /webviewer/status  POST /explode  POST /debug  POST /webviewer/start  POST /webviewer/stop")
     log.info("Press Ctrl-C to stop.")
 
     try:

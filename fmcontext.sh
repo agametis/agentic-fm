@@ -180,6 +180,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     {
         echo "# TableName|TableID|FieldName|FieldID|DataType|FieldType|AutoEnter|Flags"
 
+        if [[ -d "$XML_PARSED_DIR/tables/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/tables/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
             table_name=$(xval 'string(/FieldCatalog/BaseTableReference/@name)' "$file")
             table_id=$(xval 'string(/FieldCatalog/BaseTableReference/@id)' "$file")
@@ -232,6 +233,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
                 echo "${table_name}|${table_id}|${fname}|${fid}|${dtype}|${ftype}|${auto_enter}|${flags}"
             done
         done
+        fi
     } > "$SOLUTION_CONTEXT_DIR/fields.index"
 
     field_lines=$(( $(wc -l < "$SOLUTION_CONTEXT_DIR/fields.index") - 1 ))
@@ -243,6 +245,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     {
         echo "# LeftTO|LeftTOID|RightTO|RightTOID|JoinType|JoinFields|CascadeCreate|CascadeDelete"
 
+        if [[ -d "$XML_PARSED_DIR/relationships/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/relationships/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
             left_to=$(xval 'string(//LeftTable/TableOccurrenceReference/@name)' "$file")
             left_to_id=$(xval 'string(//LeftTable/TableOccurrenceReference/@id)' "$file")
@@ -274,6 +277,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
 
             echo "${left_to}|${left_to_id}|${right_to}|${right_to_id}|${join_type}|${join_fields}|${cascade_create}|${cascade_delete}"
         done
+        fi
     } > "$SOLUTION_CONTEXT_DIR/relationships.index"
 
     rel_lines=$(( $(wc -l < "$SOLUTION_CONTEXT_DIR/relationships.index") - 1 ))
@@ -285,6 +289,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     {
         echo "# LayoutName|LayoutID|BaseTOName|BaseTOID|FolderPath"
 
+        if [[ -d "$XML_PARSED_DIR/layouts/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/layouts/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
             layout_name=$(xval 'string(/Layout/@name)' "$file")
             layout_id=$(xval 'string(/Layout/@id)' "$file")
@@ -295,6 +300,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
 
             echo "${layout_name}|${layout_id}|${base_to}|${base_to_id}|${folder_path}"
         done
+        fi
     } > "$SOLUTION_CONTEXT_DIR/layouts.index"
 
     layout_lines=$(( $(wc -l < "$SOLUTION_CONTEXT_DIR/layouts.index") - 1 ))
@@ -306,6 +312,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     {
         echo "# ScriptName|ScriptID|FolderPath"
 
+        if [[ -d "$XML_PARSED_DIR/script_stubs/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/script_stubs/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
             script_name=$(xval 'string(/Script/@name)' "$file")
             script_id=$(xval 'string(/Script/@id)' "$file")
@@ -314,6 +321,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
 
             echo "${script_name}|${script_id}|${folder_path}"
         done
+        fi
     } > "$SOLUTION_CONTEXT_DIR/scripts.index"
 
     script_lines=$(( $(wc -l < "$SOLUTION_CONTEXT_DIR/scripts.index") - 1 ))
@@ -325,6 +333,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     {
         echo "# TOName|TOID|BaseTableName|BaseTableID"
 
+        if [[ -d "$XML_PARSED_DIR/table_occurrences/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/table_occurrences/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
             to_name=$(xval 'string(/TableOccurrence/@name)' "$file")
             to_id=$(xval 'string(/TableOccurrence/@id)' "$file")
@@ -333,6 +342,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
 
             echo "${to_name}|${to_id}|${base_table}|${base_table_id}"
         done
+        fi
     } > "$SOLUTION_CONTEXT_DIR/table_occurrences.index"
 
     to_lines=$(( $(wc -l < "$SOLUTION_CONTEXT_DIR/table_occurrences.index") - 1 ))
@@ -344,6 +354,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     {
         echo "# ValueListName|ValueListID|SourceType|Values"
 
+        if [[ -d "$XML_PARSED_DIR/value_lists/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/value_lists/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
             vl_name=$(xval 'string(/ValueList/ValueListReference/@name)' "$file")
             vl_id=$(xval 'string(/ValueList/ValueListReference/@id)' "$file")
@@ -361,6 +372,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
 
             echo "${vl_name}|${vl_id}|${vl_source}|${vl_values}"
         done
+        fi
     } > "$SOLUTION_CONTEXT_DIR/value_lists.index"
 
     vl_lines=$(( $(wc -l < "$SOLUTION_CONTEXT_DIR/value_lists.index") - 1 ))

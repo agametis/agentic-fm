@@ -111,6 +111,26 @@ List (
 - Space after each semicolon separator: `Left ( $text ; 3 )` not `Left($text;3)`
 - This supports cross-platform double-click selection of arguments
 
+### No Alignment Padding
+
+Do not add extra spaces to align values across lines. FileMaker does not render code in a monospace editor where column alignment is meaningful — the padding adds noise without benefit.
+
+```
+// Wrong — padded for alignment
+JSONSetElement ( "{}" ;
+	[ "label"     ; $label   ; JSONString ] ;
+	[ "timestamp" ; $ts      ; JSONString ]
+)
+
+// Correct — single spaces only
+JSONSetElement ( "{}" ;
+	[ "label" ; $label ; JSONString ] ;
+	[ "timestamp" ; $ts ; JSONString ]
+)
+```
+
+This applies to all multi-argument functions: `JSONSetElement`, `List`, `Case`, `Let`, etc.
+
 ### Dynamic Field References
 
 When a field name is passed as a **string parameter** to a step or function (e.g., `Set Field By Name`, `GetField`), prefer wrapping it in `GetFieldName()` to make the reference rename-safe:
@@ -175,6 +195,57 @@ Case (
 - Comment the _why_, not the _what_ — avoid restating what the step obviously does
 - In Case/If branches, use `// Else` as a visual separator before Else steps
 - Script-level comments describe purpose, expected context, parameters, and return values
+
+### Script documentation structure
+
+Every script follows this documentation pattern at the top:
+
+**1. PURPOSE line** — always the very first step, a single `# (comment)` with `PURPOSE: ...`:
+```xml
+<Step enable="True" id="89" name="# (comment)">
+  <Text>PURPOSE: One-line description of what this script does.</Text>
+</Step>
+```
+
+**2. Doc block** (when additional detail is needed) — a disabled `Insert Text` step targeting `$README`. The variable is never set (step is disabled) but the name makes it self-documenting. Use `&#xD;` for line breaks:
+```xml
+<Step enable="False" id="61" name="Insert Text">
+  <SelectAll state="False"/>
+  <Text>PARAMETERS: $param — JSON with keys ...&#xD;&#xD;RETURNS: ...</Text>
+  <Field>$README</Field>
+</Step>
+```
+
+**3. Blank lines** — empty self-closing `# (comment)` steps used as visual separators between logical sections:
+```xml
+<Step enable="True" id="89" name="# (comment)"/>
+```
+
+### Example pattern
+
+FileMaker is a copy-paste environment. Scripts that are meant to be called from other scripts should include a usage example so the caller can copy and adapt it.
+
+**Placement depends on content:**
+
+- **Bottom of script** (after `Exit Script`) — use a disabled step showing the call pattern. `Exit Script` prevents execution even if examples are somehow enabled:
+  ```xml
+  <Step enable="True" id="103" name="Exit Script"/>
+  <Step enable="True" id="89" name="# (comment)">
+    <Text>Example of how to call this script</Text>
+  </Step>
+  <Step enable="False" id="1" name="Perform Script">
+    <Calculation><![CDATA[JSONSetElement ( "{}" ; ... )]]></Calculation>
+    <Script id="0" name="Script Name"/>
+  </Step>
+  ```
+
+- **Top of script** (inline with documentation) — use a disabled `Set Variable` with an `$example_[description]` name. Being at the top makes it immediately visible; being disabled means it never executes:
+  ```xml
+  <Step enable="False" id="141" name="Set Variable">
+    <Name>$example_basicCall</Name>
+    <Value><Calculation><![CDATA[JSONSetElement ( "{}" ; [ "key" ; $value ; JSONString ] )]]></Calculation></Value>
+  </Step>
+  ```
 
 ---
 

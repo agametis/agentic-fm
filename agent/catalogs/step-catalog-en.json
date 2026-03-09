@@ -4062,7 +4062,7 @@
         "hrLabel": "text",
         "type": "text",
         "xmlElement": "Text",
-        "notes": "Raw text content (not a Calculation/CDATA). Multi-line text uses &#xD; (carriage return) entities. Required."
+        "notes": "Raw text content (not a Calculation/CDATA block). The value is literal text — no FileMaker expression syntax is evaluated. Multi-line text uses &#xD; (carriage return) entities in XML. Content can be arbitrarily long, making this step suitable for storing large static strings such as a complete HTML document into a variable (e.g., <Field>$html</Field>). Special characters in the XML must be entity-encoded: & → &amp;, < → &lt;, > → &gt;, \" → &quot;. Required."
       }
     ],
     "hrSignature": "Insert Text [ <Select ;> Target: <target> ; \"<text>\" ]",
