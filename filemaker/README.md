@@ -63,7 +63,7 @@ A Rust binary that parses FileMaker XML exports into individual files. Used by b
    chmod +x ~/bin/fm-xml-export-exploder
    ```
 
-> **Why `~/bin`?** The **Explode XML** companion script passes `~/bin/fm-xml-export-exploder` as the `FM_XML_EXPLODER_BIN` environment variable to `fmparse.sh`. If you want to place the binary elsewhere, open the **Explode XML** script in FileMaker and update the `Set Variable [$env ; MBS("Shell.AddEnvironment" ...)]` step to reflect your actual path.
+> **Why `~/bin`?** The **Explode XML** companion script passes `~/bin/fm-xml-export-exploder` as the `FM_XML_EXPLODER_BIN` environment variable to `fmparse.sh`. If you want to place the binary elsewhere, open the **Explode XML** script in FileMaker and update the `Set Variable [$payload ; JSONSetElement ( "{}" ;[ "exploder_bin_path" ;  ...]` step to reflect your actual path.
 
 When calling `fmparse.sh` directly from the terminal you can also override the path via the environment variable:
 
