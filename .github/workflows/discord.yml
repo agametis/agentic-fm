@@ -7,6 +7,8 @@ on:
   pull_request:
     types: [opened, reopened]
   fork:
+  discussion:
+    types: [created]
 
 jobs:
   notify:
@@ -32,6 +34,10 @@ jobs:
 
           if [ "$EVENT" = "fork" ]; then
             CONTENT="🍴 **Repository Forked**\n${{ github.actor }} forked ${{ github.repository }}"
+          fi
+
+          if [ "$EVENT" = "discussion" ]; then
+            CONTENT="💬 **New Discussion** in ${{ github.repository }}\nTitle: ${{ github.event.discussion.title }}\nBy: ${{ github.actor }}\n${{ github.event.discussion.html_url }}"
           fi
 
           curl -H "Content-Type: application/json" \
