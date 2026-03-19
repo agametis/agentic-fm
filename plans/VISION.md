@@ -81,7 +81,7 @@ There is an important distinction between a **layout** and the **objects on a la
 
 **Layouts cannot be programmatically created.** FileMaker provides no API, clipboard format, or external interface for creating a new layout. The developer must create the layout manually in Layout Mode first.
 
-**Layout objects, however, can be AI-composed and pasted.** Once a layout exists, the `XML2` clipboard class allows arbitrary layout objects — fields, portals, buttons, text labels, rectangles, web viewers, popovers, tab controls, slide controls, and more — to be authored as XML and pasted directly onto the layout. The full XML structure for every layout object type is documented in `xml_parsed/`, which contains complete exports from the Invoice Solution.
+**Layout objects, however, can be AI-composed and pasted.** Once a layout exists, the `XML2` clipboard class allows arbitrary layout objects — fields, portals, buttons, text labels, rectangles, web viewers, popovers, tab controls, slide controls, and more — to be authored as XML and pasted directly onto the layout. The full XML structure for every layout object type is documented in `xml_parsed/`, which contains complete exports from the target solution.
 
 | Object Type    | Clipboard Code | Notes                                        |
 | -------------- | -------------- | -------------------------------------------- |
@@ -210,44 +210,49 @@ The current default. The agent generates fmxmlsnippet XML, `clipboard.py` writes
 Agent generates XML  →  clipboard.py writes to clipboard  →  Developer pastes (⌘V)
 ```
 
-### Tier 2: MBS Plugin (macOS, requires commercial plugin)
+### Tier 2: MBS Plugin + AppleScript (macOS, requires commercial plugin)
 
-The [MBS Plugin](https://www.mbsplugins.eu/) (~€228/year) provides 32 ScriptWorkspace functions that give programmatic access to FileMaker's Script Workspace. The critical capability: **automated paste into existing scripts without human intervention.**
+The [MBS Plugin](https://www.mbsplugins.eu/) (~€228/year) provides `ScriptWorkspace.OpenScript` — the one function needed to programmatically open a specific script tab in FileMaker's Script Workspace. No native FileMaker step can do this. The companion server and AppleScript handle everything else.
 
-The pattern:
+The two-phase pattern:
 
 ```
-1. MBS("Clipboard.SetFileMakerData"; "ScriptStep"; $xml)    // load XML to clipboard
-2. MBS("ScriptWorkspace.OpenScript"; "TargetScript")         // navigate to script
-3. MBS("ScriptWorkspace.SelectLine"; -1)                     // position cursor
-4. MBS("Menubar.RunMenuCommand"; 57637)                      // trigger Paste
+Phase 1 — FM-side (Agentic-fm Paste script, triggered via companion):
+  1. GET /pending from companion → retrieves target script name
+  2. Open Script Workspace (native FM step)
+  3. MBS("ScriptWorkspace.OpenScript"; "TargetScript")   // the only MBS call
+
+Phase 2 — Host-side (raw AppleScript via companion osascript):
+  4. AXPress the script tab button → focus step editor
+  5. Cmd+A → Delete → Cmd+V (or just Cmd+V for append)
+  6. Optional: Cmd+S (auto-save)
 ```
 
-Key MBS capabilities for agent workflows:
-
-| Function | What it enables |
-|---|---|
-| `ScriptWorkspace.OpenScript` | Navigate to any script by name (with folder support) |
-| `ScriptWorkspace.SelectLine` / `SelectLines` | Position cursor or select a range for replacement |
-| `ScriptWorkspace.ScriptText` | Read back script content for verification |
-| `ScriptWorkspace.ScriptNames` / `ScriptPaths` | Discover all scripts in the solution |
-| `ScriptWorkspace.SetScriptListSearch` | Search the script list programmatically |
-| `ScriptWorkspace.SetFocusToScriptList` | Ensure focus is correct before paste |
-| `Clipboard.SetFileMakerData` | Write fmxmlsnippet XML to clipboard in FM's binary format (**works on Mac and Windows**) |
-| `Menubar.RunMenuCommand` | Trigger any FM menu command by ID (**works on Mac and Windows**) |
-| `SyntaxColoring.AddContextMenuCommand` | Install custom right-click commands in the Script Workspace |
+**Why two phases?** `Perform AppleScript` within FM causes the Script Workspace to lose step editor focus. The AXPress and paste sequence must run from outside FM via the companion's `osascript`. The pending-job `/pending` endpoint works around broken AppleScript parameter passing in FM Pro 22+.
 
 Constraints:
-- `ScriptWorkspace.*` functions are **macOS only** (Clipboard and Menubar functions work cross-platform)
-- **Cannot create new scripts** — can only paste into existing ones
-- **Cannot rename, delete, or reorder scripts**
-- **Paste cannot execute while a FM script is running** — must use `Schedule.EvaluateAfterDelay` to defer execution until the triggering script exits and the workspace regains focus
+- `ScriptWorkspace.OpenScript` is **macOS only**
+- **Cannot create new scripts** — can only open existing script tabs
+- Clipboard is loaded via the companion server's `/clipboard` endpoint (which calls `clipboard.py`), not via MBS `Clipboard.SetFileMakerData`
+- Paste is done via System Events keystrokes from the companion, not via MBS `Menubar.RunMenuCommand`
 
-### Tier 3: MBS + macOS Accessibility / AppleScript (macOS, requires plugin + Accessibility permission)
+### Tier 3: AppleScript only (macOS, requires Accessibility permission)
 
-macOS Accessibility APIs (AXUIElement) expose FileMaker Pro's UI elements — windows, menus, buttons, tabs, text fields — to programmatic control via AppleScript or JXA. This fills the gaps that MBS cannot cover.
+macOS Accessibility APIs (AXUIElement) expose FileMaker Pro's UI elements — windows, menus, buttons, tabs, text fields — to programmatic control via AppleScript. Tier 3 does **not use MBS at all** — it is a single monolithic AppleScript that creates, names, and pastes into a new script entirely through System Events UI automation.
 
-What AppleScript adds beyond MBS:
+The pattern (all within one `tell process "FileMaker Pro"` block):
+
+```
+1. Switch to [Standard FileMaker Menus] via Tools > Custom Menus
+2. Optionally switch target file to front via Window menu (multi-file)
+3. Open Script Workspace (click menu item, try/catch if already open)
+4. Cmd+N → create new script
+5. Scripts menu → Rename Script → type name → Return
+6. Cmd+V → paste from clipboard (pre-loaded via companion /clipboard)
+7. Cmd+S → save
+```
+
+What AppleScript enables at Tier 3:
 - **Create new scripts** — `Cmd+N` in the Script Workspace, type name, Enter
 - **Create and rename script folders**
 - **Navigate Manage Database dialogs** — Tables and Fields tabs (feasible but complex)
@@ -280,9 +285,9 @@ Skills should not hardcode a deployment tier. Instead, every skill that produces
 1. **Generate** — produce XML to `agent/sandbox/`
 2. **Validate** — run `validate_snippet.py`
 3. **Deploy** — call the deployment module, which selects the appropriate tier:
-   - If MBS + AppleScript are available and the developer has opted in to full automation: create scripts if needed (AppleScript), navigate + paste (MBS), verify (MBS read-back or Explode XML)
-   - If MBS is available: navigate + paste into existing scripts (MBS), developer handles script creation
-   - If neither: load clipboard (`clipboard.py write`), instruct developer to paste
+   - If Accessibility permission is available and the developer has opted in to full automation (Tier 3): create scripts and paste via monolithic AppleScript — no MBS required
+   - If MBS is available (Tier 2): open script tab via MBS, paste via AppleScript from outside FM
+   - If neither (Tier 1): load clipboard via companion, instruct developer to paste
 
 The deployment tier is a **runtime decision**, not a build-time one. A developer can opt in to full automation for a multi-script scaffold workflow and fall back to manual paste for a one-off script fix. The agent should ask once per session (or read from a config) and adjust its instructions accordingly.
 
@@ -291,21 +296,10 @@ This model means the Placeholder Technique described above becomes a spectrum:
 | Tier | Script creation & naming | Paste | Verification |
 |---|---|---|---|
 | Tier 1 | Developer clicks **+** N times, renames each to final name | Developer pastes (`⌘V`) | Developer confirms |
-| Tier 2 | Developer clicks **+** N times, renames each to final name | MBS auto-pastes | MBS reads back script text |
-| Tier 3 | AppleScript creates N scripts with final names | MBS auto-pastes | MBS reads back + Explode XML |
+| Tier 2 | Developer clicks **+** N times, renames each to final name | Companion AppleScript pastes via System Events keystrokes | Developer confirms or Explode XML |
+| Tier 3 | Companion AppleScript creates N scripts with final names | Inline paste within the same AppleScript | Developer confirms or Explode XML |
 
 At Tier 3, the full multi-script scaffold workflow — from "build me an invoicing system with 5 scripts" to verified scripts in the Script Workspace — requires no human intervention beyond approval.
-
-### MBS menu command IDs (reference)
-
-| ID | Command |
-|---|---|
-| 57634 | Copy |
-| 57635 | Cut |
-| 57637 | Paste |
-| 57632 | Delete |
-| 57642 | Select All |
-| 49182 | Duplicate |
 
 ## Skills
 

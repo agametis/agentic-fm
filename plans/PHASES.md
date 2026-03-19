@@ -34,28 +34,17 @@ git worktree remove /worktrees/schema-build
 
 ## Prerequisites
 
-### Snapshot Testing
+### Deployment Module (automation tiers) ✅ Done
 
-Before launching any phase, establish a lightweight snapshot test harness that validates generated XML against known-good examples. This replaces FileMaker paste-testing as the primary development-time validation gate. FM paste-testing remains the final validation step before merge.
+The pluggable deployment module described in `VISION.md` → Automation Tiers. Cross-cutting infrastructure consumed by every skill that produces fmxmlsnippet output. See `plans/DEPLOYMENT_STATUS.md` for full build status and quirks.
 
-**Scope**:
-- Test framework that compares generated fmxmlsnippet output against snapshot files
-- Snapshot fixtures for each step type used by existing skills
-- Integration with `validate_snippet.py` as a baseline check
-- Run as a pre-merge gate for every phase branch
-
-### Deployment Module (automation tiers)
-
-Build the pluggable deployment module described in `VISION.md` → Automation Tiers. This is cross-cutting infrastructure consumed by every skill that produces fmxmlsnippet output, so it must exist before Phase 1.
-
-**Scope**:
-- `agent/scripts/deploy.py` (or similar) — a thin dispatcher that selects the deployment tier at runtime
-- **Tier 1 (universal)**: load clipboard via `clipboard.py write`, print paste instructions
-- **Tier 2 (MBS)**: generate a FileMaker script that calls `Clipboard.SetFileMakerData` + `ScriptWorkspace.OpenScript` + `Menubar.RunMenuCommand(57637)` to auto-paste
-- **Tier 3 (MBS + AppleScript)**: additionally create scripts via AppleScript UI automation before pasting
-- Tier detection: check for MBS availability (via OData script call or developer config), check Accessibility permission
-- Developer opt-in: a config setting (e.g. `agent/config/automation.json`) that controls the default tier and allows per-invocation override
-- Every skill calls the deployment module after validation; the module handles the tier-appropriate workflow
+**What was built**:
+- `agent/scripts/deploy.py` — CLI + importable module that selects the deployment tier at runtime
+- **Tier 1 (universal)**: companion `/clipboard` loads clipboard via `clipboard.py`, returns paste instructions
+- **Tier 2 (MBS + AppleScript, two-phase)**: Phase 1 — companion triggers `Agentic-fm Paste` FM script via `osascript do script`, which opens the target script tab via `MBS("ScriptWorkspace.OpenScript")` (the only MBS function used). Phase 2 — companion fires a second `raw_applescript` that AXPresses the tab to focus the step editor, then pastes via System Events keystrokes.
+- **Tier 3 (AppleScript only, no MBS)**: companion fires a single monolithic `raw_applescript` that creates a new script, renames it, and pastes steps — all via System Events UI automation
+- Developer opt-in via `agent/config/automation.json` (default tier, per-invocation override, auto-save, multi-file targeting)
+- Interactive test suite (`agent/scripts/test_deploy.py`) — 9/9 tests passing across all tiers
 
 **Design constraint**: Tier 1 must always work. Tiers 2 and 3 are enhancements — if they fail, the module falls back to Tier 1 and reports what happened. No skill should break because a plugin is missing or Accessibility access is denied.
 
@@ -67,23 +56,23 @@ Cross-cutting output infrastructure consumed by every skill that produces HR scr
 
 **Scope**:
 - `automation.json` — add `webviewer_url` field (Vite dev server URL; distinct from process-management endpoints already built)
-- **Companion endpoints** (to build):
-  - `GET /webviewer/status` — checks whether `webviewer_url` is reachable, returns `{ "available": true/false }` (note: existing `/webviewer/status` checks process state, not URL reachability — this is a different concern)
-  - `POST /webviewer/push` — accepts `{ type, content, before? }`, broadcasts to all connected SSE clients
-- **Companion SSE stream** (to build): `GET /webviewer/events` — long-lived SSE endpoint; webviewer connects here to receive pushed payloads
-- **Webviewer** (to build): "Agent output" panel with Monaco editor; SSE listener connected to companion `/webviewer/events`; diff editor for `type: "diff"` payloads
+- **Companion endpoints**:
+  - `GET /webviewer/status` — checks whether companion-spawned Vite process is alive (process state, not URL reachability)
+  - `POST /webviewer/push` — accepts `{ type, content, before? }`, writes payload to `agent/config/.agent-output.json`
+- **Vite API endpoint**: `GET /api/agent-output` — webviewer polls this on ~1s interval; returns payload from `.agent-output.json` or `{ "available": false }`
+- **Webviewer**: "Agent output" panel with Monaco editor; polls `/api/agent-output`; diff editor for `type: "diff"` payloads
 - **Payload types**: `preview` (HR display), `diff` (before/after Monaco diff editor), `result` (evaluation or structured output)
 
 **Design constraint**: webviewer channel is always additive. Skills must still produce useful terminal output when the webviewer is unavailable. No skill should require the Vite server to be running.
 
 **Done when**:
-1. `automation.json` has `webviewer_url` field
-2. `GET /webviewer/status` returns `{ "available": true }` when Vite is running and reachable
-3. `POST /webviewer/push` with `{ "type": "preview", "content": "..." }` broadcasts to connected clients
-4. Webviewer "Agent output" panel displays pushed HR content in Monaco with FileMaker syntax highlighting
-5. `POST /webviewer/push` with `{ "type": "diff", "content": "...", "before": "..." }` opens Monaco diff editor
-6. When Vite is not running, `/webviewer/status` returns `{ "available": false }` and skills fall back to terminal-only output without error
-7. End-to-end test: agent generates HR script, calls `/webviewer/push`, preview appears in Monaco
+1. ✅ `automation.json` has `webviewer_url` field
+2. ✅ `GET /webviewer/status` returns process state; URL reachability checked directly by skills
+3. ✅ `POST /webviewer/push` writes payload to `.agent-output.json`
+4. ✅ Webviewer "Agent output" panel displays pushed HR content in Monaco with FileMaker syntax highlighting
+5. ✅ `POST /webviewer/push` with `{ "type": "diff", "content": "...", "before": "..." }` opens Monaco diff editor
+6. ✅ When Vite is not running, skills detect unavailability and fall back to terminal-only output without error
+7. 🔵 End-to-end test inside FM WebViewer object (polling confirmed in browser, untested in FM WebKit)
 
 ---
 
@@ -91,7 +80,7 @@ Cross-cutting output infrastructure consumed by every skill that produces HR scr
 
 FM-side infrastructure for runtime calculation validation and data context capture. See `DEPLOYMENT_STATUS.md` → AGFMEvaluation + Snapshot for full design.
 
-- **`AGFMEvaluation` FM script** — installed in Invoice Solution (script ID 315). Confirmed working 2026-03-18.
+- **`AGFMEvaluation` FM script** — installed in agentic-fm.fmp12. Confirmed working 2026-03-18.
 - **Push Context update** — `snapshot_path` and `snapshot_timestamp` in CONTEXT.json, `agent/context/snapshot.xml` written on each Push Context run. Confirmed 2026-03-19.
 - **`calc-eval` skill** — deferred; not yet implemented.
 
@@ -99,18 +88,16 @@ FM-side infrastructure for runtime calculation validation and data context captu
 
 ## Phase 1 — Multi-Script Scaffold
 
-**Status**: `planned`
-**Branch**: `feature/multi-script`
-**Worktree**: `/worktrees/multi-script`
+**Status**: `merged`
 **Vision ref**: What Makes This Hard → Placeholder Technique; Skills → `multi-script-scaffold`
 
-This is the proof-of-concept phase. It validates the worktree workflow, skill authoring process, and FM integration loop with a low-risk, self-contained skill before scaling up.
+Skill built and available at `.claude/skills/multi-script-scaffold/` and `.cursor/skills/multi-script-scaffold/`.
 
-**Scope**:
-- Implement the `multi-script-scaffold` skill — calculate placeholder count, guide creation, capture IDs via Push Context, generate all scripts in one pass with correct Perform Script wiring, walk developer through renames
-- Integrate with `context-refresh` to capture placeholder script IDs before generation (developer renames placeholders to final names before Push Context — FM names all new scripts `New Script`)
-- Integrate with the deployment module — at Tier 1 the developer pastes each script manually; at Tier 2 MBS auto-pastes into each placeholder; at Tier 3 AppleScript creates the placeholders and MBS pastes, fully autonomous
-- Test against a 3-script and a 5-script interdependent system
+**What was delivered**:
+- `multi-script-scaffold` skill — guides placeholder creation, captures IDs via Push Context, generates all scripts with correct Perform Script wiring, deploys per tier
+- Integrated with `context-refresh` for ID capture
+- Integrated with the deployment module across all three tiers
+- Webviewer preview output support
 
 ---
 

@@ -8,9 +8,9 @@ Session-persistent notes on what was built, every quirk discovered, and where to
 
 ### `agent/scripts/deploy.py`
 CLI + importable module. Reads `agent/config/automation.json`. Three tiers:
-- **Tier 1**: POSTs XML to companion `/clipboard`, returns paste instructions
-- **Tier 2**: Two-phase — Phase 1: `do script "Agentic-fm Paste"` opens script tab via MBS; Phase 2: companion fires `raw_applescript` for AXPress tab focus + paste from outside FM
-- **Tier 3**: Monolithic `raw_applescript` via companion — custom menu guard → Window menu file switch → Script Workspace → Cmd+N → rename → Cmd+V → Cmd+S
+- **Tier 1** (universal, no dependencies): POSTs XML to companion `/clipboard`, returns paste instructions
+- **Tier 2** (MBS + AppleScript, two-phase): Phase 1: `do script "Agentic-fm Paste"` opens script tab via `MBS("ScriptWorkspace.OpenScript")` — the only MBS function used; Phase 2: companion fires `raw_applescript` for AXPress tab focus + paste via System Events keystrokes from outside FM
+- **Tier 3** (AppleScript only, no MBS): Monolithic `raw_applescript` via companion — custom menu guard → Window menu file switch → Script Workspace → Cmd+N → rename → Cmd+V → Cmd+S. No FM-side script involved.
 
 CLI usage:
 ```bash
@@ -40,15 +40,17 @@ Key fields: `default_tier`, `project_tier`, `auto_save`, `fm_app_name`, `compani
 - `auto_save: false` — override per deploy with `--auto-save`
 - `fm_app_name` must match the exact AppleScript application name including em dash and version: `"FileMaker Pro — 22.0.4.406"`
 
-### `agent/sandbox/Agentic-fm Paste.xml`
-MBS-powered FM script. Installed in the solution. Called by companion `/trigger` via AppleScript `do script`. **Only opens the script tab** — paste is handled externally by deploy.py. Flow:
+### `Agentic-fm Paste` FM script
+FM script using one MBS function: `ScriptWorkspace.OpenScript`. Called by companion `/trigger` via AppleScript `do script`. **Only opens the script tab** — paste is handled externally by deploy.py. Flow:
 1. `GET localhost:8765/pending` → retrieves `target` (script name)
-2. `tell me to activate` + `delay 1.0`
-3. `Open Script Workspace` step
-4. `MBS("ScriptWorkspace.OpenScript"; $target)`
+2. `Perform AppleScript: tell me to activate`
+3. `Open Script Workspace` step (native FM)
+4. `MBS("ScriptWorkspace.OpenScript"; $target)` — the only MBS call
 5. Exit Script with JSON result
 
 The actual paste sequence (AXPress tab + Cmd+A → Delete → Cmd+V) runs from outside FM via deploy.py's Phase 2 `raw_applescript`. AXPress must run from outside FM — Perform AppleScript within FM causes Script Workspace to lose step editor focus.
+
+Note: `agent/sandbox/Agentic-fm Paste.xml` is the installable fmxmlsnippet version. The canonical reference is now in `xml_parsed/scripts_sanitized/` after the latest Explode XML export.
 
 ### Companion server additions (`agent/scripts/companion_server.py`)
 Endpoints:
@@ -190,7 +192,7 @@ When confident in the deployment loop, flip `auto_save` to `true` in `automation
 Agentic-fm Paste is confirmed stable. Run `Explode XML` in FM Pro to export the solution and get the latest agentic-fm scripts into `xml_parsed/`. This is the canonical record of what's installed in the solution.
 
 ### ~~Build AGFMEvaluation script~~ ✅ Done
-AGFMEvaluation installed in Invoice Solution as script ID 315. Push Context (ID 280) updated to write `agent/context/snapshot.xml` with `snapshot_path` and `snapshot_timestamp` in CONTEXT.json. Confirmed working 2026-03-18.
+AGFMEvaluation installed in agentic-fm.fmp12 (also installed in Invoice Solution test file). Push Context updated to write `agent/context/snapshot.xml` with `snapshot_path` and `snapshot_timestamp` in CONTEXT.json. Confirmed working 2026-03-18. Note: script IDs differ between files — always look up by name, not ID.
 
 ---
 
@@ -291,7 +293,7 @@ After `AGFMEvaluation` returns, the agent can ask the companion to read `snapsho
 | `agent/scripts/test_deploy.py` | Interactive deployment test suite |
 | `agent/scripts/companion_server.py` | HTTP companion server on host |
 | `agent/config/automation.json` | Tier config, fm_app_name, companion_url, auto_save, webviewer_url |
-| `agent/sandbox/Agentic-fm Paste.xml` | FM script — opens script tab via MBS (install in solution) |
+| `agent/sandbox/Agentic-fm Paste.xml` | FM script — opens script tab via MBS `ScriptWorkspace.OpenScript` (the only MBS function used) |
 | `agent/sandbox/AGFMEvaluation.xml` | FM script — server-side calc evaluator (installed in solution) |
 | `agent/CONTEXT.json` | Schema/layout context — written by Push Context, read by agent |
 | `agent/context/snapshot.xml` | Reference data snapshot — written by Push Context |

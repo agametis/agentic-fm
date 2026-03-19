@@ -21,11 +21,11 @@ Not a skill (not invoked by trigger phrase). A shared module (`agent/scripts/dep
 
 **Interface**:
 - **Input**: path to validated fmxmlsnippet XML file in `agent/sandbox/`, target script name (optional), deployment tier override (optional)
-- **Output**: deployment result — success/failure, tier used, verification result (if Tier 2/3)
+- **Output**: deployment result — success/failure, tier used, instructions (Tier 1/fallback) or message (Tier 2/3 success)
 - **Behaviour by tier**:
-  - **Tier 1** (universal): runs `clipboard.py write`, prints paste instructions to the developer
-  - **Tier 2** (MBS): companion server writes XML to clipboard (`clipboard.py`), then calls `osascript` to tell FM Pro to run a MBS paste script client-side (`Clipboard.SetFileMakerData` + `ScriptWorkspace.OpenScript` + `Menubar.RunMenuCommand(57637)`); reads back via `ScriptWorkspace.ScriptText` to verify. **Note**: MBS ScriptWorkspace functions are UI automation — they require FM Pro client-side execution and cannot run via OData (server-side).
-  - **Tier 3** (MBS + AppleScript): companion server additionally uses `osascript` to create N script placeholders in FM Pro's Script Workspace before pasting; otherwise identical to Tier 2
+  - **Tier 1** (universal): companion `/clipboard` endpoint writes XML to macOS clipboard via `clipboard.py`, returns paste instructions to the developer
+  - **Tier 2** (MBS + AppleScript, two-phase): Phase 1 — companion `/trigger` fires `do script "Agentic-fm Paste"` via `osascript`, which opens Script Workspace and navigates to the target script tab via `MBS("ScriptWorkspace.OpenScript")` (the only MBS function used). Phase 2 — companion fires a second `raw_applescript` via `osascript` that AXPresses the tab button to focus the step editor, then pastes via System Events keystrokes (`Cmd+A → Delete → Cmd+V`). AXPress must run from outside FM — `Perform AppleScript` within FM causes Script Workspace to lose step editor focus.
+  - **Tier 3** (AppleScript only, no MBS): companion fires a single monolithic `raw_applescript` via `osascript` that creates a new script (`Cmd+N`), renames it, and pastes steps — all via System Events UI automation. No FM-side script is involved. Falls back to Tier 2 if creation fails (clipboard is already loaded).
 - **Tier selection**: reads `agent/config/automation.json` for the developer's default preference; skills can pass a tier override; if the requested tier fails, falls back to Tier 1
 - **Config format** (`agent/config/automation.json`):
   ```json
@@ -36,12 +36,12 @@ Not a skill (not invoked by trigger phrase). A shared module (`agent/scripts/dep
     "companion_url": "http://local.hub:8765",
     "tiers": {
       "1": { "description": "Clipboard only", "requires": [] },
-      "2": { "description": "MBS auto-paste", "requires": ["mbs_plugin"] },
-      "3": { "description": "Full autonomy", "requires": ["mbs_plugin", "accessibility_permission"] }
+      "2": { "description": "MBS open script + AppleScript paste", "requires": ["mbs_plugin"] },
+      "3": { "description": "Full autonomy via AppleScript", "requires": ["accessibility_permission"] }
     }
   }
   ```
-  `fm_app_name` is used in `osascript` calls — must match the exact AppleScript application name (versioned, with em dash where applicable). `companion_url` is how the agent reaches the companion server from inside its container.
+  `fm_app_name` is used in `osascript` calls — must match the exact AppleScript application name (versioned, with em dash where applicable). `companion_url` is how the agent reaches the companion server from inside its container. Note: Tier 3 does not require MBS — it uses AppleScript exclusively.
 
 **Design constraint**: Tier 1 must always work. No skill should fail because a higher tier is unavailable.
 
@@ -219,8 +219,8 @@ A single skill with three sub-modes covering OData connection setup, schema crea
 - All N scripts generated as fmxmlsnippet in `agent/sandbox/`
 - Deployment via the deployment module, tier-dependent:
   - **Tier 1**: instruction to developer on how many placeholders to create, paste instructions per script, rename checklist
-  - **Tier 2**: instruction to developer on how many placeholders to create; MBS auto-pastes into each; rename checklist
-  - **Tier 3**: AppleScript creates N scripts automatically; MBS auto-pastes into each; agent renames via AppleScript; developer approves
+  - **Tier 2**: instruction to developer on how many placeholders to create; companion opens each script tab via MBS + pastes via AppleScript; rename checklist
+  - **Tier 3**: companion AppleScript creates N scripts with final names and pastes into each; developer approves
 - Rename checklist (Tiers 1–2) or verification summary (Tier 3)
 
 **Calls**: `context-refresh` (to capture script IDs), deployment module (for output)

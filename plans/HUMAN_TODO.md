@@ -14,7 +14,12 @@ Everything the developer must provide, decide, confirm, or set up before the pha
 
    Consider a launchd plist for auto-start (see `agent/docs/COMPANION_SERVER.md`).
 
-2. **agentic-fm scripts installed in your solution** — The four FM-side scripts (`Get agentic-fm path`, `Push Context`, `Explode XML`, `Agentic-fm Debug`) must be installed and functional in every solution you plan to work with. Confirm `$$AGENTIC.FM` resolves to the correct project path.
+2. **agentic-fm scripts installed in your solution** — The FM-side scripts must be installed and functional in every solution you plan to work with. The master collection includes:
+   - **Root**: `Get agentic-fm path`, `Explode XML`, `Push Context`
+   - **Extras**: `Agentic-fm webviewer`, `Agentic-fm Menu`, `Agentic-fm Debug`, `Agentic-fm Paste`
+   - **OData**: `AGFMScriptBridge`, `AGFMGoToLayout`, `AGFMEvaluation`
+
+   Confirm `$$AGENTIC.FM` resolves to the correct project path.
 
 3. **Add `webviewer_url` to `automation.json`** — Required for the webviewer output channel. Set it to your Vite dev server URL (typically `http://localhost:5173`). If the webviewer is not in use, omit or leave empty — skills degrade gracefully to terminal-only output.
 
@@ -24,27 +29,27 @@ Everything the developer must provide, decide, confirm, or set up before the pha
 
 4. **FileMaker Server with OData access (Phase 3b+)** — Required for schema-build and data tooling phases. This means:
    - A FileMaker Server instance running (Docker or native) — **confirmed working: FMS 21.1.5 in Docker container `fms`, reachable at `https://local.hub/`**
-   - A hosted database file to work against — **confirmed: Invoice Solution**
+   - A hosted database file to work against — **confirmed: Invoice Solution (test file)**
    - An account with the `fmodata` extended privilege enabled — **confirmed: `Odata` account**
    - Full Access privilege for schema creation operations (CREATE TABLE, ALTER TABLE)
    - SSL handling sorted — **confirmed: mkcert CA cert mounted and trusted in agent container**
-   - OData script execution workaround installed — **FMS 21.1.5 cannot route OData script calls with spaces in script names. `AGFMBridge` script installed in Invoice Solution as the routing bridge.**
+   - OData script execution workaround installed — **FMS 21.1.5 cannot route OData script calls with spaces in script names. `AGFMScriptBridge` installed in agentic-fm.fmp12 (and Invoice Solution test file) as the routing bridge.**
 
 ---
 
-## AGFMEvaluation Setup
+## AGFMEvaluation Setup ✅ Done
 
-These are required before the `calc-eval` skill can be used. Complete after the deployment loop is stable.
+These were required before the `calc-eval` skill can be used.
 
-- [ ] **Paste `AGFMEvaluation.xml` into Invoice Solution** — once the script is built in `agent/sandbox/`, paste via Tier 1 into a new script named exactly `AGFMEvaluation`, save it
-- [ ] **Run Push Context after the snapshot update** — once Push Context is updated to save `agent/context/snapshot.xml`, run it on the relevant layout to generate the first reference snapshot; confirm `CONTEXT.json` now includes `snapshot_path`
-- [ ] **Run Explode XML** — after both scripts are installed, export the solution so `xml_parsed/` reflects the new agentic-fm scripts
+- [x] **AGFMEvaluation installed in agentic-fm.fmp12** — confirmed working 2026-03-18
+- [x] **Push Context updated to write snapshot** — `agent/context/snapshot.xml` written, `snapshot_path` and `snapshot_timestamp` in CONTEXT.json, confirmed 2026-03-19
+- [x] **Explode XML run** — `xml_parsed/` reflects the latest agentic-fm scripts including AGFMEvaluation
 
 ---
 
 ## Context & Reference Data
 
-5. **Run Explode XML to populate `xml_parsed/`** — Phase 3a (Layout Design) validates XML2 output against layout exports in `xml_parsed/`. These must be current before that phase starts. Run the `Explode XML` script in FM Pro against the Invoice Solution (or whichever solution you're targeting).
+5. **Run Explode XML to populate `xml_parsed/`** — Phase 3a (Layout Design) validates XML2 output against layout exports in `xml_parsed/`. These must be current before that phase starts. Run the `Explode XML` script in FM Pro against the target solution.
 
 6. **Run Push Context on the relevant layout** — Confirm `Push Context` works end-to-end: prompts for task description, calls the `Context()` custom function, and writes a valid `agent/CONTEXT.json`. This is the primary feedback loop for every phase.
 
@@ -56,12 +61,13 @@ These are required before the `calc-eval` skill can be used. Complete after the 
 
 7. **Choose your automation tier default** — The deployment module needs your preference in `agent/config/automation.json`:
    - **Tier 1** (clipboard only, universal) — you paste manually with Cmd+V
-   - **Tier 2** (MBS Plugin, macOS) — auto-paste into existing scripts, you still create scripts manually
-   - **Tier 3** (MBS + AppleScript, macOS) — fully autonomous script creation and paste
+   - **Tier 2** (MBS + AppleScript, macOS) — companion opens script tab via MBS, then pastes via System Events keystrokes from outside FM. You still create scripts manually.
+   - **Tier 3** (AppleScript only, macOS) — fully autonomous script creation and paste via System Events. No MBS required.
 
    If choosing Tier 2 or 3, also confirm:
-   - [ ] MBS Plugin is installed and licensed
-   - [ ] (Tier 3 only) Accessibility permission granted to the controlling app in System Settings
+   - [ ] (Tier 2 only) MBS Plugin is installed and licensed (only `ScriptWorkspace.OpenScript` is used)
+   - [ ] (Tier 2+) `fmextscriptaccess` extended privilege enabled on the account
+   - [ ] (Tier 2+ for auto-save, all Tier 3) Accessibility permission granted to the terminal app in System Settings
 
 8. **Review and finalize `SKILL_INTERFACES.md`** — This document is the contract between all skills. Every agent reads it before writing any skill that interacts with another. You must sign off that the trigger phrases, inputs, outputs, and inter-skill call relationships are correct and complete before Phase 1 starts.
 
@@ -81,7 +87,7 @@ These are required before the `calc-eval` skill can be used. Complete after the 
     - [ ] `agent/debug/output.json` is written correctly and the agent can read it
     - [ ] The skill handles common failure modes (script errors, missing variables, timeout)
 
-11. **Confirm `validate_snippet.py` covers all step types in use** — The snapshot testing infrastructure builds on this validator. Verify it catches structural errors for the step types your existing skills produce.
+11. **Confirm `validate_snippet.py` covers all step types in use** — Verify it catches structural errors for the step types your existing skills produce.
 
 ---
 
@@ -121,7 +127,7 @@ The bare minimum to start Phase 1:
 | 1 | Companion server running on host (`COMPANION_BIND_HOST=0.0.0.0`) | [x] |
 | 2 | agentic-fm scripts installed | [x] |
 | 6 | Push Context works end-to-end | [x] |
-| 7 | Test solution identified | [x] Invoice Solution |
+| 7 | Test solution identified | [x] Invoice Solution (test file) |
 | 8 | Automation tier chosen + `automation.json` created | [x] Tier 1 default, Tier 3 project target |
 | 9 | `SKILL_INTERFACES.md` finalized | [x] |
 | 10 | Shared infrastructure confirmed stable | [x] |
@@ -130,7 +136,7 @@ Additional items before `calc-eval` skill can be used (post-Phase 1):
 
 | # | Item | Status |
 |---|------|--------|
-| AGFMEval-1 | `AGFMEvaluation.xml` built and installed in solution | [x] Script ID 315 |
-| AGFMEval-2 | Push Context updated to write `agent/context/snapshot.xml` | [x] Script ID 280 |
+| AGFMEval-1 | `AGFMEvaluation.xml` built and installed in solution | [x] Confirmed working |
+| AGFMEval-2 | Push Context updated to write `agent/context/snapshot.xml` | [x] Confirmed working |
 | AGFMEval-3 | `snapshot_path` field confirmed present in `CONTEXT.json` | [x] Confirmed 2026-03-18 |
 | AGFMEval-4 | `webviewer_url` added to `automation.json` | [x] |

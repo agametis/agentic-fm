@@ -21,11 +21,13 @@ Complete every item before testing any tier. Missing prerequisites produce confu
   ```
   Example: `"FileMaker Pro — 22.0.4.406"`
 
-### FileMaker Pro (Tier 2+ only)
-- [ ] **MBS Plugin installed and licensed** (full suite required for ScriptWorkspace and Menubar functions)
+### FileMaker Pro (Tier 2 only)
+- [ ] **MBS Plugin installed and licensed** (ScriptWorkspace.OpenScript function required — this is the only MBS function used)
 - [ ] **Agentic-fm Paste script installed in your solution** — paste `agent/sandbox/Agentic-fm Paste.xml` into a script named exactly `Agentic-fm Paste`, save it
 - [ ] **`fmextscriptaccess` enabled** — in FM Pro: File > Manage > Security → edit the Full Access privilege set → Extended Privileges → enable "Allow Apple events and ActiveX to perform FileMaker operations" (`fmextscriptaccess`)
-- [ ] **Accessibility permission granted to FileMaker Pro** (required for auto-save only) — System Preferences → Privacy & Security → Accessibility → add FileMaker Pro
+
+### macOS host (Tier 2+ auto-save, all Tier 3)
+- [ ] **Accessibility permission granted** — System Preferences → Privacy & Security → Accessibility → add the terminal app (Terminal.app, iTerm2, VS Code, etc.) that runs deploy.py. Required for System Events keystrokes used in paste and Tier 3 script creation.
 
 ### Agent container (if running in Docker)
 - [ ] Container can reach companion: `curl http://local.hub:8765/health` → `{"status":"ok",...}`
@@ -64,9 +66,9 @@ Script loaded to clipboard.
 
 ---
 
-## Tier 2 — MBS auto-paste
+## Tier 2 — MBS open script + AppleScript paste
 
-**What it does:** Writes XML to clipboard, triggers FM Pro via AppleScript to run `Agentic-fm Paste`, which opens Script Workspace, navigates to the target script, and pastes.
+**What it does:** Two-phase deploy. Phase 1: writes XML to clipboard via companion `/clipboard`, then triggers `Agentic-fm Paste` via companion `/trigger` — FM opens Script Workspace and navigates to the target script tab via MBS `ScriptWorkspace.OpenScript`. Phase 2: companion fires a second AppleScript that AXPresses the tab to focus the step editor, then pastes via System Events keystrokes.
 
 ### Pre-test checklist
 - [ ] Agentic-fm Paste is installed and **saved** in the solution (no `*` on its tab)
@@ -163,7 +165,7 @@ If the script triggers but paste doesn't happen, add `Insert from URL` checkpoin
 
 ## Tier 3 — Create script + inline paste
 
-`deploy.py _tier3()` loads the XML to clipboard first, then fires a `raw_applescript` directly to the companion `/trigger` endpoint. The AppleScript runs synchronously on the host — no FM-side script required, no Agentic-fm Paste involved.
+`deploy.py _tier3()` loads the XML to clipboard first, then fires a single monolithic `raw_applescript` directly to the companion `/trigger` endpoint. The AppleScript runs synchronously on the host — **no FM-side script involved, no MBS required, no Agentic-fm Paste**. Everything is done through System Events UI automation.
 
 ### Test
 ```bash
@@ -186,20 +188,20 @@ Same as above — final save after paste removes `*` from tab.
 
 ### AppleScript sequence (all within one `tell process "FileMaker Pro"` block)
 1. Activate FM Pro
-2. Open Script Workspace (try/catch — skips gracefully if already open)
-3. `Cmd+N` → creates "New Script"
-4. Scripts menu → "Rename Script" → type target name → Return
-5. `Cmd+S` → save (required before paste or FM blocks with unsaved-scripts dialog on subsequent `do script`)
-6. `Cmd+A` → select all placeholder steps
-7. `Cmd+V` → paste from clipboard (pre-loaded before AppleScript fired)
-8. If `auto_save`: `Cmd+S` → save after paste
+2. Switch to [Standard FileMaker Menus] via Tools > Custom Menus (guards against custom menu sets hiding the Scripts menu)
+3. Optionally: switch target file to front via Window menu (multi-file support), then switch menus again
+4. Open Script Workspace (try/catch — skips gracefully if already open)
+5. `Cmd+N` → creates "New Script"
+6. Scripts menu → "Rename Script" → type target name → Return
+7. `Cmd+V` → paste from clipboard (pre-loaded before AppleScript fired; new script is empty — no select/delete needed)
+8. `Cmd+S` → save (always saves after paste for new scripts)
 
 ### Key quirks
 - `tell process` requires `"FileMaker Pro"` (base name only — no version suffix)
 - "Rename Script" requires `delay 1.0` after clicking before keystrokes land
-- Save before paste is mandatory — FM blocks `do script` if unsaved changes exist
 - `try` block around Script Workspace open is required — menu item errors if already open
-- MBS `Menubar.RunMenuCommand(57637)` does not work after System Events manipulation; System Events `Cmd+V` does — that's why paste is inline here rather than delegated to Agentic-fm Paste
+- No MBS is used in Tier 3 — everything is System Events UI automation
+- Custom menu guard is essential — custom menu sets can hide the Scripts menu needed for Rename Script
 
 ---
 
@@ -216,8 +218,8 @@ Same as above — final save after paste removes `*` from tab.
   "companion_url": "http://local.hub:8765",
   "tiers": {
     "1": { "description": "Clipboard only", "requires": [] },
-    "2": { "description": "MBS auto-paste", "requires": ["mbs_plugin"] },
-    "3": { "description": "Full autonomy", "requires": ["mbs_plugin", "accessibility_permission"] }
+    "2": { "description": "MBS open script + AppleScript paste", "requires": ["mbs_plugin"] },
+    "3": { "description": "Full autonomy via AppleScript", "requires": ["accessibility_permission"] }
   }
 }
 ```
