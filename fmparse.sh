@@ -182,6 +182,27 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Check exploder version — enable --obfuscate-passwords for versions > 0.6.1
+# ---------------------------------------------------------------------------
+_exploder_version="$("$EXPLODER_CMD" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [[ -n "$_exploder_version" ]]; then
+    _ver_gt() {
+        local IFS=.
+        local i v1=($1) v2=($2)
+        for ((i=0; i<${#v1[@]} || i<${#v2[@]}; i++)); do
+            local a="${v1[i]:-0}" b="${v2[i]:-0}"
+            if ((a > b)); then return 0; fi
+            if ((a < b)); then return 1; fi
+        done
+        return 1  # equal is not greater
+    }
+    if _ver_gt "$_exploder_version" "0.6.1"; then
+        EXPLODER_FLAGS+=("--obfuscate-passwords")
+        msg "Exploder v$_exploder_version: enabling --obfuscate-passwords"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Step 1: Create dated archive folder in xml_exports/<solution>/
 # ---------------------------------------------------------------------------
 TODAY="$(date +%Y-%m-%d)"
