@@ -24,6 +24,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -74,6 +75,82 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("companion_server")
+SUBPROCESS_HEARTBEAT_SECONDS = 5
+
+
+def _stream_pipe(pipe, level, prefix, output_buffer, state):
+    """Copy a subprocess pipe to the logger in real time while buffering it."""
+    try:
+        for line in iter(pipe.readline, ""):
+            if not line:
+                break
+            output_buffer.append(line)
+            with state["lock"]:
+                state["last_output_at"] = time.monotonic()
+            level("%s%s", prefix, line.rstrip("\n"))
+    finally:
+        pipe.close()
+
+
+def _run_command_streaming(cmd, *, cwd, env, label):
+    """Run a command, stream its output to the server log, and capture it."""
+    process = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
+    )
+
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    state = {"last_output_at": time.monotonic(), "lock": threading.Lock()}
+
+    stdout_thread = threading.Thread(
+        target=_stream_pipe,
+        args=(process.stdout, log.info, f"[{label} stdout] ", stdout_chunks, state),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_stream_pipe,
+        args=(process.stderr, log.warning, f"[{label} stderr] ", stderr_chunks, state),
+        daemon=True,
+    )
+
+    stdout_thread.start()
+    stderr_thread.start()
+
+    last_heartbeat_at = time.monotonic()
+    while True:
+        try:
+            return_code = process.wait(timeout=1)
+            break
+        except subprocess.TimeoutExpired:
+            now = time.monotonic()
+            with state["lock"]:
+                silence_for = now - state["last_output_at"]
+            if (
+                silence_for >= SUBPROCESS_HEARTBEAT_SECONDS
+                and now - last_heartbeat_at >= SUBPROCESS_HEARTBEAT_SECONDS
+            ):
+                log.info(
+                    "%s still running... (%ds since last output)",
+                    label,
+                    int(silence_for),
+                )
+                last_heartbeat_at = now
+
+    stdout_thread.join()
+    stderr_thread.join()
+
+    return {
+        "returncode": return_code,
+        "stdout": "".join(stdout_chunks),
+        "stderr": "".join(stderr_chunks),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -192,26 +269,24 @@ class CompanionHandler(BaseHTTPRequestHandler):
         )
 
         try:
-            result = subprocess.run(
+            result = _run_command_streaming(
                 cmd,
                 cwd=repo_path,
                 env=env,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
+                label="fmparse.sh",
             )
 
-            success = result.returncode == 0
+            success = result["returncode"] == 0
             response = {
                 "success": success,
-                "exit_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "exit_code": result["returncode"],
+                "stdout": result["stdout"],
+                "stderr": result["stderr"],
             }
             status = 200 if success else 500
 
             log.info(
-                "fmparse.sh exited with code %d", result.returncode
+                "fmparse.sh exited with code %d", result["returncode"]
             )
 
         except Exception as exc:
