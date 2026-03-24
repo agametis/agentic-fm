@@ -22,6 +22,8 @@ python3 agent/scripts/trace.py dead   -s "Solution Name" -t TYPE  # find unused 
 Query types: `field`, `script`, `layout`, `value_list`, `custom_func`, `table_occurrence`
 Dead types: `fields`, `scripts`, `custom_functions`, `layouts`, `value_lists`
 
+The `query` and `dead` commands read from the pre-built `xref.index` file — they do not re-scan source files. This means queries are fast (single file read) and the expensive `build` step only needs to run once per schema change.
+
 ### Layer 2: Agentic correlation (this skill)
 
 Adds judgment for things static analysis cannot handle: ExecuteSQL strings, dynamic references, ambiguity resolution, severity classification, and false positive filtering.
@@ -43,23 +45,33 @@ All field references are normalized to **canonical form** (`BaseTable::FieldName
 
 ## Workflow
 
-### Step 1 — Determine solution and ensure xref.index exists
+### Step 1 — Preflight (parallel)
 
-List subdirectories under `agent/context/`:
+Run all of these checks **in a single parallel batch** — they are independent:
 
 ```bash
+# 1a. Discover solutions
 ls agent/context/
+
+# 1b. Check xref.index existence and age
+stat agent/context/{solution}/xref.index
+
+# 1c. Check layout summaries exist
+ls agent/context/{solution}/layouts/ 2>/dev/null | head -1
+
+# 1d. Check webviewer status (for later visualization offer)
+curl -s http://localhost:8765/webviewer/status
 ```
 
+**Solution resolution:**
 - If one subfolder exists, use it automatically.
-- If multiple exist, use `AskUserQuestion` to ask which solution.
+- If multiple exist, ask the developer which solution.
 - If none exist, instruct the developer to run `fmcontext.sh`.
 
-Check if `agent/context/{solution}/xref.index` exists. If missing or stale, build it:
-
-```bash
-python3 agent/scripts/trace.py build -s "{solution}"
-```
+**xref.index caching — avoid unnecessary rebuilds:**
+- If `xref.index` **exists** and the developer has not mentioned schema changes (new fields, renamed tables, new scripts, etc.), **use it directly** — skip the build. This is the single biggest time saver.
+- If `xref.index` is **missing**, build it: `python3 agent/scripts/trace.py build -s "{solution}"`
+- If the developer explicitly says the schema changed, or if trace results look wrong, **rebuild**: `python3 agent/scripts/trace.py build -s "{solution}"`
 
 **Layout summary dependency**: If `agent/context/{solution}/layouts/` is empty or missing, warn and suggest:
 
@@ -68,6 +80,8 @@ python3 agent/scripts/layout_to_summary.py --solution "{solution}"
 ```
 
 Then rebuild xref.index.
+
+Save the webviewer status result for Step 5b — do not check again later.
 
 ### Step 2 — Infer mode from the developer's request
 
@@ -78,47 +92,79 @@ Then rebuild xref.index.
 | "Show unused fields" / "Dead code" / "Unused scripts" | **Dead** | Run `dead` for the specified type |
 | "What does X reference?" / "Dependencies of X" | **Outbound** | Run `query --direction outbound` |
 
-### Step 3 — Run the deterministic query
+### Step 3 — Run deterministic query + agentic grep (parallel)
 
-**Usage mode**:
+The engine query and the agentic grep passes are **independent** — run them in the same parallel batch. This is the core optimization: instead of query-then-grep sequentially, issue all calls simultaneously.
+
+#### Usage mode — parallel batch:
+
+Run all of these in a **single message with parallel tool calls**:
 
 ```bash
+# 3a. Deterministic query
 python3 agent/scripts/trace.py query -s "{solution}" -t {type} -n "{name}"
+
+# 3b. ExecuteSQL string scan (agentic — only for field/table traces)
+grep -rl "ExecuteSQL" "agent/xml_parsed/scripts_sanitized/{solution}/" --include="*.txt"
+
+# 3c. Dynamic reference scan (agentic — only for field/script traces)
+grep -rn "GetField\|GetFieldName\|Evaluate\|Perform Script by Name" "agent/xml_parsed/scripts_sanitized/{solution}/" --include="*.txt"
 ```
 
-The query accepts both canonical (`Clients::Name`) and TO-qualified (`Clients Primary::Name`) input — the engine resolves TOs automatically.
+Skip 3b/3c when they are not relevant to the object type (e.g., skip ExecuteSQL scan when tracing a layout).
 
-**Dead mode**:
+#### Dead mode:
 
 ```bash
 python3 agent/scripts/trace.py dead -s "{solution}" -t {type}
 ```
 
-Add `--verbose` to include low-confidence results (system fields, globals, summaries).
+Add `--verbose` to include low-confidence results (system fields, globals, summaries). No parallel agentic grep needed — false positive filtering (Step 4e) uses the dead output directly.
 
-**Impact mode**: Run multiple queries as needed — e.g., for a table rename, query all fields in that table plus the table name itself as a table occurrence.
+#### Impact mode — parallel batch:
 
-### Step 4 — Agentic correlation
+For a table rename or broad impact analysis, run **all queries in parallel**:
 
-After getting the deterministic results, apply judgment for edge cases the engine cannot handle:
+```bash
+# 3a. Query the primary object
+python3 agent/scripts/trace.py query -s "{solution}" -t {type} -n "{name}"
+
+# 3b. Query related objects (e.g., table as TO for table renames)
+python3 agent/scripts/trace.py query -s "{solution}" -t table_occurrence -n "{table_name}"
+
+# 3c. ExecuteSQL scan
+grep -rl "ExecuteSQL" "agent/xml_parsed/scripts_sanitized/{solution}/" --include="*.txt"
+
+# 3d. Dynamic reference scan
+grep -rn "GetField\|GetFieldName\|Evaluate" "agent/xml_parsed/scripts_sanitized/{solution}/" --include="*.txt"
+```
+
+For a table rename affecting many fields, run one query per affected field — all in parallel.
+
+#### Outbound mode:
+
+```bash
+python3 agent/scripts/trace.py query -s "{solution}" -t {type} -n "{name}" --direction outbound
+```
+
+### Step 4 — Agentic correlation (on parallel results)
+
+Analyze the results gathered in Step 3. All grep output is already available — this step is pure analysis, no additional tool calls needed unless a specific ExecuteSQL script needs closer reading.
 
 #### a. ExecuteSQL string analysis
 
-Grep `scripts_sanitized/` for `ExecuteSQL` calls:
-
-```bash
-grep -r "ExecuteSQL" "agent/xml_parsed/scripts_sanitized/{solution}/" --include="*.txt" -l
-```
-
-For each hit, read the script and analyze the SQL string:
+From the grep results (3b), for each script containing `ExecuteSQL`:
+- Read only the relevant lines (not the full script) to analyze the SQL string
 - SQL uses **raw table names** (not TOs) and may differ from FM field names
 - SQL strings may be built via concatenation or variables
 - Map SQL table/column names to base tables/fields from `fields.index`
 - Flag as "dynamic reference — may be affected" with explanation
 
+**Batch reads**: If multiple scripts matched, read the relevant sections in parallel.
+
 #### b. Dynamic references
 
-Flag any script step using:
+From the grep results (3c), flag any script step using:
 - **GetField()** / **GetFieldName()** — field names as strings or variables
 - **Evaluate()** — arbitrary calculation evaluation at runtime
 - **Perform Script by Name** — script name from a variable
@@ -137,7 +183,7 @@ When the same field name exists in multiple tables (e.g., `Status` in `Clients`,
 | **WARN** | Indirect reference that may fail | ExecuteSQL string literal, GetField with concatenated name |
 | **INFO** | FM auto-updates on rename | Layout field placements, relationship graph join fields |
 
-#### e. False positive filtering (dead mode)
+#### e. False positive filtering (dead mode only)
 
 Review dead object results and filter:
 - Fields whose only auto-enter references `Self` (active even with no external refs)
@@ -157,11 +203,7 @@ Format the combined results as a structured report appropriate to the mode:
 
 ### Step 5b — Webviewer visualization (conditional)
 
-Check if the webviewer is running:
-
-```bash
-curl -s http://localhost:8765/webviewer/status
-```
+Use the webviewer status captured in Step 1d (do not re-check).
 
 If `"running": true`, prompt the developer:
 
@@ -230,32 +272,56 @@ Pipe-delimited, one line per reference:
 
 ---
 
+## Tool call budget
+
+Target tool calls from invocation to results presented:
+
+| Mode | Without cache | With xref.index cached |
+|------|---------------|------------------------|
+| Usage | 3 (preflight + build, query+grep, report) | 2 (preflight+query+grep, report) |
+| Dead | 3 (preflight + build, dead, report) | 2 (preflight+dead, report) |
+| Impact | 4 (preflight + build, parallel queries+grep, reads, report) | 3 (preflight+queries+grep, reads, report) |
+
+The key savings come from: (1) skipping `build` when xref.index exists, (2) running the deterministic query and agentic grep passes in the same parallel batch, (3) batching all preflight checks together, (4) caching the webviewer status from preflight instead of checking it after analysis.
+
+---
+
 ## Examples
 
 ### Example 1 — Usage report
 
 Developer: "Where is `Clients::Name` used?"
 
-1. Run `trace.py query -t field -n "Clients::Name"` → 9 references found
-2. Check for ExecuteSQL calls → none reference the Clients table
-3. Present report: 2 field calcs, 7 layout placements, 0 scripts
+1. **Parallel preflight**: `ls agent/context/`, `stat xref.index`, `curl webviewer/status` -- xref.index exists, skip build
+2. **Parallel query+grep**: `trace.py query -t field -n "Clients::Name"` + `grep -rl "ExecuteSQL" scripts_sanitized/` + `grep -rn "GetField" scripts_sanitized/` -- all in one batch
+3. Correlate: no ExecuteSQL hits reference Clients table, no dynamic refs
+4. Present report: 2 field calcs, 7 layout placements, 0 scripts
+
+**Tool calls: 2** (preflight batch, query+grep batch) + report presentation
 
 ### Example 2 — Dead object scan
 
 Developer: "Show me all unused fields"
 
-1. Run `trace.py dead -t fields` → 3 high confidence, 0 medium
+1. **Parallel preflight+dead**: `ls agent/context/`, `stat xref.index`, `trace.py dead -t fields` -- xref.index exists, run dead immediately alongside preflight
 2. Verify: `Invoices::FoundCount` and `Line Items::FoundCount` are unstored calcs for `Get(FoundCount)` — used only at runtime on layouts with the field present
-3. Check layouts for FoundCount fields → if present, downgrade to medium
+3. Check layouts for FoundCount fields -- if present, downgrade to medium
 4. Present report with confidence levels
+
+**Tool calls: 1-2** (preflight+dead batch, optional layout check) + report presentation
 
 ### Example 3 — Impact analysis
 
 Developer: "What breaks if I rename the Clients table to Companies?"
 
-1. Query all `Clients::*` fields → list every reference
-2. Query `Clients` as a table occurrence → relationships, Go to Related Record
-3. Grep for `ExecuteSQL` referencing `Clients` (SQL table name)
+1. **Parallel preflight**: confirm xref.index exists, check webviewer
+2. **Parallel queries+grep** (single batch):
+   - `trace.py query -t field -n "Clients::*"` for each field (or grep xref.index directly for all Clients:: refs)
+   - `trace.py query -t table_occurrence -n "Clients"`
+   - `grep -rl "ExecuteSQL" scripts_sanitized/`
+3. Read matched ExecuteSQL scripts in parallel to check for `Clients` table references
 4. Classify: Set Field/Set Variable refs = BREAK, layout placements = INFO, ExecuteSQL strings = WARN
 5. Present severity-grouped report
-6. If webviewer running, push flowchart diagram with severity coloring
+6. Webviewer was running (from Step 1) -- offer flowchart diagram with severity coloring
+
+**Tool calls: 3** (preflight, parallel queries+grep, parallel script reads) + report presentation

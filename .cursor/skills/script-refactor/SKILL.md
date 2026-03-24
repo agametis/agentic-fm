@@ -34,14 +34,57 @@ Read `agent/CONTEXT.json` or index files for any field/layout/script references 
 
 ---
 
-## Step 3: Resolve the call tree
+## Step 3: Resolve the call tree (parallel loading)
 
-Before analysing logic, build the full picture of every script involved.
+Before analysing logic, build the full picture of every script involved. The goal is to minimize tool calls by loading subscripts in parallel batches — one batch per depth level.
 
-1. **Extract Perform Script references** — scan the human-readable script for all `Perform Script` lines. Extract every target script name.
-2. **Load each subscript** — locate and read each subscript's human-readable version from `scripts_sanitized/`. Use the scripts index to resolve names to paths: `grep "ScriptName" "agent/context/{solution}/scripts.index"`
-3. **Recurse** — each subscript may call further subscripts. Repeat until no new references are found. Track visited scripts to avoid cycles.
-4. **Present the call tree** — show the developer the full scope before starting analysis:
+**Performance target**: For a script with N subscripts at depth 1, the call tree should load in 2 tool calls (1 grep + 1 parallel read), not N+1 sequential calls.
+
+### 3a. Extract ALL Perform Script references in one pass
+
+Grep the entry script's sanitized text for every `Perform Script` line at once. Extract all target script names from the results.
+
+```bash
+grep -i "Perform Script" "agent/xml_parsed/scripts_sanitized/{solution}/{path}.txt"
+```
+
+This returns lines like:
+- `Perform Script [ "Subscript A" ; Parameter: $param ]` — extract `Subscript A`
+- `Perform Script [ "Subscript B" ]` — extract `Subscript B`
+- `Perform Script By Name [ ... ]` — flag as unresolvable (calculated name)
+
+### 3b. Batch-resolve names to file paths
+
+Take ALL extracted script names and resolve them to file paths in a **single grep** against the scripts index:
+
+```bash
+grep -E "Subscript A|Subscript B|Subscript C" "agent/context/{solution}/scripts.index"
+```
+
+This returns pipe-delimited rows (`ScriptName|ScriptID|FolderPath`) for every match. From each row, derive the sanitized file path:
+
+- **With folder path**: `agent/xml_parsed/scripts_sanitized/{solution}/{FolderPath}*/{ScriptName} - ID {ScriptID}.txt`
+- **Top-level** (empty folder path): `agent/xml_parsed/scripts_sanitized/{solution}/{ScriptName} - ID {ScriptID}.txt`
+
+Since folder directory names include an ID suffix not in the index, use a glob to resolve the exact path if needed.
+
+### 3c. Parallel-read ALL subscripts
+
+Read ALL resolved subscript files in a **single message with multiple Read tool calls** — one per subscript. This replaces the old sequential "find one, read one, find next, read next" pattern.
+
+For example, if the entry script calls 5 subscripts, issue 5 Read tool calls in a single message. All 5 load in parallel.
+
+### 3d. Recurse (parallel per depth level)
+
+After loading depth-1 subscripts, scan ALL of them for further `Perform Script` references. Collect any new (not yet visited) script names across all depth-1 subscripts, then repeat 3b–3c for the next depth level.
+
+Track visited scripts by name to avoid cycles. Continue until no new references are found.
+
+Each depth level adds at most 2 tool calls (1 batch grep + 1 parallel read), regardless of how many subscripts exist at that level.
+
+### 3e. Present the call tree
+
+Show the developer the full scope before starting analysis:
 
 ```
 Call tree: [Script Name]
@@ -51,7 +94,10 @@ Call tree: [Script Name]
 └── Subscript C
 ```
 
-Flag any `Perform Script by name` (calculated names) that cannot be statically resolved — ask the developer to clarify.
+Flag these edge cases:
+- **Calculated names** — `Perform Script By Name` references cannot be statically resolved. Ask the developer to clarify.
+- **Missing scripts** — references to scripts not found in `scripts_sanitized/` may be in a different solution file or deleted. Flag them.
+- **Cycles** — scripts already visited are noted but not re-loaded.
 
 ---
 

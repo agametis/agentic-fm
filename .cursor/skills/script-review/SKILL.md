@@ -17,31 +17,55 @@ Use the `script-lookup` skill to find the script if not already identified. Read
 
 ---
 
-## Step 2: Resolve the call tree
+## Step 2: Resolve the call tree (parallel loading)
 
-Before analysing any logic, build the full picture of every script involved.
+Before analysing any logic, build the full picture of every script involved. The goal is to minimize tool calls by loading subscripts in parallel batches — one batch per depth level.
 
-### 2a. Extract Perform Script references
+**Performance target**: For a script with N subscripts at depth 1, the call tree should load in 2 tool calls (1 grep + 1 parallel read), not N+1 sequential calls.
 
-Scan the human-readable script for all `Perform Script` lines. Each one names or references a subscript. Extract every target script name.
+### 2a. Extract ALL Perform Script references in one pass
+
+Grep the entry script's sanitized text for every `Perform Script` line at once. Extract all target script names from the results.
 
 ```bash
 grep -i "Perform Script" "agent/xml_parsed/scripts_sanitized/{solution}/{path}.txt"
 ```
 
-### 2b. Load each subscript
+This returns lines like:
+- `Perform Script [ "Subscript A" ; Parameter: $param ]` — extract `Subscript A`
+- `Perform Script [ "Subscript B" ]` — extract `Subscript B`
+- `Perform Script By Name [ ... ]` — flag as unresolvable (calculated name)
 
-For each subscript found, locate and read its human-readable version from `scripts_sanitized/`. Use the scripts index to resolve names to paths:
+### 2b. Batch-resolve names to file paths
+
+Take ALL extracted script names and resolve them to file paths in a **single grep** against the scripts index:
 
 ```bash
-grep "ScriptName" "agent/context/{solution}/scripts.index"
+grep -E "Subscript A|Subscript B|Subscript C" "agent/context/{solution}/scripts.index"
 ```
 
-### 2c. Recurse
+This returns pipe-delimited rows (`ScriptName|ScriptID|FolderPath`) for every match. From each row, derive the sanitized file path:
 
-Each subscript may itself call further subscripts. Repeat 2a–2b for every newly loaded script until no new `Perform Script` references are found. Track visited scripts to avoid cycles.
+- **With folder path**: `agent/xml_parsed/scripts_sanitized/{solution}/{FolderPath}*/{ScriptName} - ID {ScriptID}.txt`
+- **Top-level** (empty folder path): `agent/xml_parsed/scripts_sanitized/{solution}/{ScriptName} - ID {ScriptID}.txt`
 
-### 2d. Present the call tree
+Since folder directory names include an ID suffix not in the index, use a glob to resolve the exact path if needed.
+
+### 2c. Parallel-read ALL subscripts
+
+Read ALL resolved subscript files in a **single message with multiple Read tool calls** — one per subscript. This replaces the old sequential "find one, read one, find next, read next" pattern.
+
+For example, if the entry script calls 5 subscripts, issue 5 Read tool calls in a single message. All 5 load in parallel.
+
+### 2d. Recurse (parallel per depth level)
+
+After loading depth-1 subscripts, scan ALL of them for further `Perform Script` references. Collect any new (not yet visited) script names across all depth-1 subscripts, then repeat 2b–2c for the next depth level.
+
+Track visited scripts by name to avoid cycles. Continue until no new references are found.
+
+Each depth level adds at most 2 tool calls (1 batch grep + 1 parallel read), regardless of how many subscripts exist at that level.
+
+### 2e. Present the call tree
 
 Before starting the review, present the resolved call tree so the developer can see the full scope:
 
@@ -56,9 +80,10 @@ Before starting the review, present the resolved call tree so the developer can 
        └── Subscript A  (already loaded)
 ```
 
-Note any scripts referenced by name calculation (`Perform Script by name`) — these cannot be statically resolved. Flag them so the developer can clarify which scripts may be called.
-
-Note any `Perform Script` references to scripts that don't exist in `scripts_sanitized/` — these may be in a different solution file, or may have been deleted. Flag them.
+Flag these edge cases:
+- **Calculated names** — `Perform Script By Name` references cannot be statically resolved. Flag them so the developer can clarify which scripts may be called.
+- **Missing scripts** — `Perform Script` references to scripts not found in `scripts_sanitized/` may be in a different solution file or deleted. Flag them.
+- **Cycles** — scripts already visited are noted but not re-loaded.
 
 ---
 
