@@ -43,7 +43,17 @@ BIND_HOST = os.environ.get("COMPANION_BIND_HOST", "127.0.0.1")
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/petrowsky/agentic-fm/main/version.txt"
 FILE_WATCH_POLL_INTERVAL_SECONDS = 0.5
 FILE_WATCH_MAX_EVENTS = 100
+FILE_WATCH_MAX_IMPORTS = 20
+IMPORT_LOG_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2} ")
 IMPORT_LOG_UNKNOWN_VALUE_RE = re.compile(r'Attribute value [“"](.+?)[”"] unknown\.')
+IMPORT_LOG_ATTRIBUTE_MISSING_RE = re.compile(r'^Attribute [“"](.+?)[”"] missing\.$')
+IMPORT_LOG_FIELD_MISSING_RE = re.compile(r'^Field [“"](.+?)[”"] missing\.$')
+IMPORT_LOG_FIELD_REFERENCE_MISSING_RE = re.compile(r'^Field referred to in the calculation [“"](.+?)[”"] is missing\.$', re.S)
+IMPORT_LOG_LAYOUT_MISSING_RE = re.compile(r'^Layout [“"](.+?)[”"] missing\.$')
+IMPORT_LOG_SCRIPT_MISSING_RE = re.compile(r'^Script [“"](.+?)[”"] missing\.$')
+IMPORT_LOG_FUNCTION_MISSING_RE = re.compile(r'^Function referred to in the calculation [“"](.+?)[”"] is missing\.$', re.S)
+IMPORT_LOG_TABLE_MISSING_RE = re.compile(r'^Table referred to in the calculation [“"](.+?)[”"] is missing\.$', re.S)
+IMPORT_LOG_UNKNOWN_ERROR_RE = re.compile(r'^Unknown Error: <unknown>\.$', re.I)
 
 # Read version from version.txt at the repo root
 def _read_local_version() -> str:
@@ -91,8 +101,13 @@ _file_watch_state: dict = {
         "events_total": 0,
         "errors_total": 0,
         "matches_by_rule": {},
+        "errors_by_code": {},
         "current_import": {},
         "last_completed_import": {},
+        "recent_imports": [],
+        "imports_total": 0,
+        "imports_with_errors": 0,
+        "imports_without_errors": 0,
         "last_error": {},
     },
     "recent_events": [],
@@ -119,6 +134,22 @@ def _utc_now_iso() -> str:
 
 def _clone_jsonable(data):
     return json.loads(json.dumps(data, ensure_ascii=False))
+
+
+def _new_file_watch_summary() -> dict:
+    return {
+        "events_total": 0,
+        "errors_total": 0,
+        "matches_by_rule": {},
+        "errors_by_code": {},
+        "current_import": {},
+        "last_completed_import": {},
+        "recent_imports": [],
+        "imports_total": 0,
+        "imports_with_errors": 0,
+        "imports_without_errors": 0,
+        "last_error": {},
+    }
 
 
 def _snapshot_file_watch_state() -> dict:
@@ -230,6 +261,9 @@ def _record_watch_event_locked(event: dict):
     if event.get("severity") == "error":
         summary["errors_total"] += 1
         summary["last_error"] = event
+        code = str(event.get("code", "")).strip()
+        if code:
+            summary["errors_by_code"][code] = summary["errors_by_code"].get(code, 0) + 1
         current_import = summary.get("current_import") or {}
         if current_import:
             current_import["error_count"] = int(current_import.get("error_count", 0)) + 1
@@ -250,7 +284,10 @@ def _parse_import_log_line(line: str) -> dict | None:
     if len(parts) != 4:
         return None
 
-    timestamp_str, source, code, message = parts
+    timestamp_str, source, code, message = (part.strip() for part in parts)
+    if not IMPORT_LOG_TIMESTAMP_RE.match(timestamp_str):
+        return None
+
     parsed = {
         "timestamp": timestamp_str,
         "source": source,
@@ -280,6 +317,114 @@ def _parse_import_log_line(line: str) -> dict | None:
     return parsed
 
 
+def _classify_import_log_issue(parsed: dict) -> dict:
+    message = parsed["message"]
+    code = parsed["code"]
+
+    if "unknown_value" in parsed:
+        return {
+            "rule": "unknown_attribute_value",
+            "category": "unknown_attribute_value",
+            "attribute_value": parsed.get("unknown_value", ""),
+        }
+
+    attribute_missing_match = IMPORT_LOG_ATTRIBUTE_MISSING_RE.match(message)
+    if attribute_missing_match:
+        return {
+            "rule": "missing_attribute",
+            "category": "missing_attribute",
+            "attribute_name": attribute_missing_match.group(1),
+        }
+
+    field_missing_match = IMPORT_LOG_FIELD_MISSING_RE.match(message)
+    if field_missing_match:
+        return {
+            "rule": "missing_field",
+            "category": "missing_field",
+            "field_name": field_missing_match.group(1),
+        }
+
+    field_reference_missing_match = IMPORT_LOG_FIELD_REFERENCE_MISSING_RE.match(message)
+    if field_reference_missing_match:
+        return {
+            "rule": "missing_field_reference",
+            "category": "missing_field_reference",
+            "field_reference": field_reference_missing_match.group(1),
+        }
+
+    layout_missing_match = IMPORT_LOG_LAYOUT_MISSING_RE.match(message)
+    if layout_missing_match:
+        return {
+            "rule": "missing_layout",
+            "category": "missing_layout",
+            "layout_name": layout_missing_match.group(1),
+        }
+
+    script_missing_match = IMPORT_LOG_SCRIPT_MISSING_RE.match(message)
+    if script_missing_match:
+        return {
+            "rule": "missing_script",
+            "category": "missing_script",
+            "script_reference": script_missing_match.group(1),
+        }
+
+    function_missing_match = IMPORT_LOG_FUNCTION_MISSING_RE.match(message)
+    if function_missing_match:
+        return {
+            "rule": "missing_function",
+            "category": "missing_function",
+            "function_reference": function_missing_match.group(1),
+        }
+
+    table_missing_match = IMPORT_LOG_TABLE_MISSING_RE.match(message)
+    if table_missing_match:
+        return {
+            "rule": "missing_table_reference",
+            "category": "missing_table_reference",
+            "table_reference": table_missing_match.group(1),
+        }
+
+    if IMPORT_LOG_UNKNOWN_ERROR_RE.match(message):
+        return {
+            "rule": "unknown_error",
+            "category": "unknown_error",
+        }
+
+    return {
+        "rule": f"import_log_code_{code}",
+        "category": "other",
+    }
+
+
+def _append_recent_import_locked(import_summary: dict):
+    recent_imports = _file_watch_state["summary"].setdefault("recent_imports", [])
+    recent_imports.append(import_summary)
+    if len(recent_imports) > FILE_WATCH_MAX_IMPORTS:
+        _file_watch_state["summary"]["recent_imports"] = recent_imports[-FILE_WATCH_MAX_IMPORTS:]
+
+
+def _record_import_lifecycle_event_locked(parsed: dict, rule: str, severity: str, message: str | None = None, **extra) -> dict:
+    event = {
+        "detected_at": _utc_now_iso(),
+        "event_type": "import_log_lifecycle",
+        "rule": rule,
+        "severity": severity,
+        "timestamp": parsed["timestamp"],
+        "source": parsed["source"],
+        "code": parsed["code"],
+        "message": message if message is not None else parsed["message"],
+        "script_name": parsed.get("script_name", ""),
+        "script_line": parsed.get("script_line", ""),
+        "step_name": parsed.get("step_name", ""),
+        "attribute_name": parsed.get("attribute_name", ""),
+        "unknown_value": parsed.get("unknown_value", ""),
+        "raw_line": parsed["raw_line"],
+    }
+    event.update(extra)
+    _record_watch_event_locked(event)
+    return event
+
+
 def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
     parsed = _parse_import_log_line(line)
     if not parsed:
@@ -291,7 +436,6 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
         message = parsed["message"]
         code = parsed["code"]
         source = parsed["source"]
-        state_changed = False
 
         if message == "Import of script steps from clipboard started":
             summary["current_import"] = {
@@ -299,40 +443,82 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
                 "started_at": parsed["timestamp"],
                 "error_count": 0,
             }
-            state_changed = True
+            events.append(
+                _record_import_lifecycle_event_locked(
+                    parsed,
+                    "import_started",
+                    "info",
+                    import_status="running",
+                )
+            )
 
         if "imported_steps" in parsed:
             current_import = summary.get("current_import") or {}
+            if not current_import:
+                current_import = {
+                    "source": source,
+                    "started_at": parsed["timestamp"],
+                    "error_count": 0,
+                }
             current_import["imported_steps"] = parsed["imported_steps"]
             summary["current_import"] = current_import
-            state_changed = True
+            events.append(
+                _record_import_lifecycle_event_locked(
+                    parsed,
+                    "import_steps_imported",
+                    "info",
+                    import_status="running",
+                    imported_steps=parsed["imported_steps"],
+                )
+            )
 
         if message == "Import completed":
             current_import = dict(summary.get("current_import") or {})
+            completed_import = {}
             if current_import:
                 current_import["completed_at"] = parsed["timestamp"]
+                current_import["status"] = "with_errors" if int(current_import.get("error_count", 0)) > 0 else "ok"
                 summary["last_completed_import"] = current_import
+                summary["imports_total"] = int(summary.get("imports_total", 0)) + 1
+                if current_import["status"] == "with_errors":
+                    summary["imports_with_errors"] = int(summary.get("imports_with_errors", 0)) + 1
+                else:
+                    summary["imports_without_errors"] = int(summary.get("imports_without_errors", 0)) + 1
+                _append_recent_import_locked(current_import)
+                completed_import = current_import
             summary["current_import"] = {}
-            state_changed = True
-
-        if state_changed:
-            _bump_file_watch_revision_locked()
+            events.append(
+                _record_import_lifecycle_event_locked(
+                    parsed,
+                    "import_completed",
+                    "warn" if int(completed_import.get("error_count", 0)) > 0 else "info",
+                    message=(
+                        f"Import completed with {int(completed_import.get('error_count', 0))} errors."
+                        if completed_import
+                        else "Import completed."
+                    ),
+                    import_status=completed_import.get("status", "unknown"),
+                    imported_steps=completed_import.get("imported_steps"),
+                    error_count=int(completed_import.get("error_count", 0)),
+                )
+            )
 
         if code == "0":
-            return []
+            return events
 
         if analyzer_type == "import_log_unknown_attributes" and "unknown_value" not in parsed:
-            return []
+            return events
 
-        rule_name = "unknown_attribute" if "unknown_value" in parsed else "import_log_error"
+        issue = _classify_import_log_issue(parsed)
         event = {
             "detected_at": _utc_now_iso(),
             "event_type": "import_log_issue",
-            "rule": rule_name,
+            "rule": issue["rule"],
             "severity": "error",
             "timestamp": parsed["timestamp"],
             "source": source,
             "code": code,
+            "category": issue["category"],
             "message": message,
             "script_name": parsed.get("script_name", ""),
             "script_line": parsed.get("script_line", ""),
@@ -341,6 +527,7 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
             "unknown_value": parsed.get("unknown_value", ""),
             "raw_line": parsed["raw_line"],
         }
+        event.update(issue)
         _record_watch_event_locked(event)
         events.append(event)
 
@@ -370,14 +557,21 @@ def _process_regex_line(line: str, analyzer_runtime: dict) -> list[dict]:
 
 def _process_watch_lines(lines: list[str], analyzer_runtime: dict) -> list[dict]:
     events = []
+    import_log_lines = []
     for line in lines:
         stripped = line.rstrip("\r\n")
         if not stripped:
             continue
         if analyzer_runtime["type"] in ("import_log", "import_log_unknown_attributes"):
-            events.extend(_process_import_log_line(stripped, analyzer_runtime["type"]))
+            if _parse_import_log_line(stripped):
+                import_log_lines.append(stripped)
+            elif import_log_lines:
+                import_log_lines[-1] = f"{import_log_lines[-1]}\n{stripped}"
         elif analyzer_runtime["type"] == "regex":
             events.extend(_process_regex_line(stripped, analyzer_runtime))
+    if analyzer_runtime["type"] in ("import_log", "import_log_unknown_attributes"):
+        for import_log_line in import_log_lines:
+            events.extend(_process_import_log_line(import_log_line, analyzer_runtime["type"]))
     return events
 
 
@@ -531,14 +725,7 @@ def _start_file_watch(path: str, poll_interval: float, start_at_end: bool, analy
         _file_watch_state["file_exists"] = os.path.exists(expanded_path)
         _file_watch_state["revision"] = 0
         _file_watch_state["analyzer"] = _clone_jsonable(analyzer_config)
-        _file_watch_state["summary"] = {
-            "events_total": 0,
-            "errors_total": 0,
-            "matches_by_rule": {},
-            "current_import": {},
-            "last_completed_import": {},
-            "last_error": {},
-        }
+        _file_watch_state["summary"] = _new_file_watch_summary()
         _file_watch_state["recent_events"] = []
         _file_watch_state["last_error"] = ""
         _bump_file_watch_revision_locked()
@@ -595,10 +782,10 @@ def _resolve_import_log_path(payload: dict) -> dict:
 
 def _build_watch_ui_html() -> str:
     return """<!doctype html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-  <meta charset=\"utf-8\">
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Companion Watch</title>
   <style>
     :root { color-scheme: dark; }
@@ -627,6 +814,8 @@ def _build_watch_ui_html() -> str:
     .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px; font-size: 13px; }
     .events { display: grid; gap: 10px; }
     .event { border: 1px solid #2e395d; border-radius: 12px; padding: 12px; background: #0d1430; }
+    .event.info { border-color: #2f5d8a; }
+    .event.warn { border-color: #8a6a2f; }
     .event.error { border-color: #7f2940; }
     .event .meta { color: #93a1c6; font-size: 12px; margin-bottom: 6px; }
     .event .msg { white-space: pre-wrap; word-break: break-word; }
@@ -635,107 +824,107 @@ def _build_watch_ui_html() -> str:
   </style>
 </head>
 <body>
-  <div class=\"wrap\">
-    <div style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap;\">
+  <div class="wrap">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div>
         <h1>Companion Watch</h1>
-        <div class=\"muted\">Live file watch, Import.log auto-resolution, SSE stream, and recent event view.</div>
+        <div class="muted">Live file watch, Import.log auto-resolution, SSE stream, and recent event view.</div>
       </div>
       <div>
-        <span id=\"runningBadge\" class=\"badge\">stopped</span>
-        <span id=\"streamBadge\" class=\"badge\">stream idle</span>
+        <span id="runningBadge" class="badge">stopped</span>
+        <span id="streamBadge" class="badge">stream idle</span>
       </div>
     </div>
-    <div class=\"grid\">
-      <section class=\"panel\">
+    <div class="grid">
+      <section class="panel">
         <h2>Auto Import.log Watch</h2>
-        <div class=\"row\">
+        <div class="row">
           <div>
-            <label for=\"importLocation\">Location</label>
-            <select id=\"importLocation\">
-              <option value=\"server\">Server file</option>
-              <option value=\"local\">Local database file</option>
+            <label for="importLocation">Location</label>
+            <select id="importLocation">
+              <option value="server">Server file</option>
+              <option value="local">Local database file</option>
             </select>
           </div>
           <div>
-            <label for=\"importAnalyzer\">Analyzer</label>
-            <select id=\"importAnalyzer\">
-              <option value=\"import_log_unknown_attributes\">Unknown attributes only</option>
-              <option value=\"import_log\">All Import.log issues</option>
+            <label for="importAnalyzer">Analyzer</label>
+            <select id="importAnalyzer">
+              <option value="import_log">All Import.log issues</option>
+              <option value="import_log_unknown_attributes">Unknown attributes only</option>
             </select>
           </div>
         </div>
-        <div class=\"row single\">
+        <div class="row single">
           <div>
-            <label for=\"databasePath\">Database path or folder for local file mode</label>
-            <input id=\"databasePath\" placeholder=\"/path/to/MyFile.fmp12\">
+            <label for="databasePath">Database path or folder for local file mode</label>
+            <input id="databasePath" placeholder="/path/to/MyFile.fmp12">
           </div>
         </div>
-        <div class=\"row\">
+        <div class="row">
           <div>
-            <label for=\"documentsDir\">Documents dir for server mode</label>
-            <input id=\"documentsDir\" value=\"~/Documents\">
+            <label for="documentsDir">Documents dir for server mode</label>
+            <input id="documentsDir" value="~/Documents">
           </div>
           <div>
-            <label for=\"importPollInterval\">Poll interval</label>
-            <input id=\"importPollInterval\" value=\"0.5\">
+            <label for="importPollInterval">Poll interval</label>
+            <input id="importPollInterval" value="0.5">
           </div>
         </div>
-        <div class=\"button-row\">
-          <button id=\"startImportButton\">Start Import.log watch</button>
+        <div class="button-row">
+          <button id="startImportButton">Start Import.log watch</button>
         </div>
       </section>
-      <section class=\"panel\">
+      <section class="panel">
         <h2>Custom File Watch</h2>
-        <div class=\"row single\">
+        <div class="row single">
           <div>
-            <label for=\"customPath\">File path</label>
-            <input id=\"customPath\" placeholder=\"/path/to/file.log\">
+            <label for="customPath">File path</label>
+            <input id="customPath" placeholder="/path/to/file.log">
           </div>
         </div>
-        <div class=\"row\">
+        <div class="row">
           <div>
-            <label for=\"customAnalyzer\">Analyzer</label>
-            <select id=\"customAnalyzer\">
-              <option value=\"import_log_unknown_attributes\">Import.log unknown attributes</option>
-              <option value=\"import_log\">Import.log issues</option>
+            <label for="customAnalyzer">Analyzer</label>
+            <select id="customAnalyzer">
+              <option value="import_log">Import.log issues</option>
+              <option value="import_log_unknown_attributes">Import.log unknown attributes</option>
             </select>
           </div>
           <div>
-            <label for=\"customPollInterval\">Poll interval</label>
-            <input id=\"customPollInterval\" value=\"0.5\">
+            <label for="customPollInterval">Poll interval</label>
+            <input id="customPollInterval" value="0.5">
           </div>
         </div>
-        <div class=\"row single\">
+        <div class="row single">
           <div>
-            <label for=\"startAtEnd\">Start at end of file</label>
-            <select id=\"startAtEnd\">
-              <option value=\"true\">true</option>
-              <option value=\"false\">false</option>
+            <label for="startAtEnd">Start at end of file</label>
+            <select id="startAtEnd">
+              <option value="true">true</option>
+              <option value="false">false</option>
             </select>
           </div>
         </div>
-        <div class=\"button-row\">
-          <button id=\"startCustomButton\">Start custom watch</button>
-          <button id=\"stopButton\" class=\"danger\">Stop watch</button>
-          <button id=\"refreshButton\" class=\"secondary\">Refresh</button>
+        <div class="button-row">
+          <button id="startCustomButton">Start custom watch</button>
+          <button id="stopButton" class="danger">Stop watch</button>
+          <button id="refreshButton" class="secondary">Refresh</button>
         </div>
       </section>
-      <section class=\"panel full\">
+      <section class="panel full">
         <h2>Status</h2>
-        <div id=\"statusGrid\" class=\"kv\"></div>
+        <div id="statusGrid" class="kv"></div>
       </section>
-      <section class=\"panel\">
+      <section class="panel">
         <h2>Summary</h2>
-        <pre id=\"summaryView\">{}</pre>
+        <pre id="summaryView">{}</pre>
       </section>
-      <section class=\"panel\">
+      <section class="panel">
         <h2>Current / Last Import</h2>
-        <pre id=\"importView\">{}</pre>
+        <pre id="importView">{}</pre>
       </section>
-      <section class=\"panel full\">
+      <section class="panel full">
         <h2>Recent Events</h2>
-        <div id=\"events\" class=\"events\"></div>
+        <div id="events" class="events"></div>
       </section>
     </div>
   </div>
@@ -781,14 +970,21 @@ def _build_watch_ui_html() -> str:
       $('importView').textContent = JSON.stringify({
         current_import: state.summary?.current_import || {},
         last_completed_import: state.summary?.last_completed_import || {},
+        recent_imports: state.summary?.recent_imports || [],
       }, null, 2);
 
       const events = [...(state.recent_events || [])].reverse();
       $('events').innerHTML = events.length ? events.map((event) => {
         const bits = [
           event.detected_at || '',
+          event.severity || '',
           event.rule || '',
+          event.code ? `code ${event.code}` : '',
+          event.import_status || '',
+          event.imported_steps ? `steps ${event.imported_steps}` : '',
+          Number.isFinite(event.error_count) ? `errors ${event.error_count}` : '',
           event.script_name || '',
+          event.source || '',
           event.script_line || '',
           event.step_name || '',
           event.attribute_name || '',
@@ -1067,22 +1263,25 @@ class CompanionHandler(BaseHTTPRequestHandler):
             body = self._read_body()
             payload = json.loads(body) if body else {}
         except (ValueError, OSError) as exc:
-            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            self._send_json(
+                {"success": False, "exit_code": -1, "error": f"Invalid request: {exc}"},
+                status=400,
+            )
             return
 
         path = payload.get("path", "")
         if not path:
-            self._send_json({"success": False, "error": "Missing required field: path"}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": "Missing required field: path"}, status=400)
             return
 
         try:
             poll_interval = float(payload.get("poll_interval", FILE_WATCH_POLL_INTERVAL_SECONDS))
         except (TypeError, ValueError):
-            self._send_json({"success": False, "error": "poll_interval must be a number"}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": "poll_interval must be a number"}, status=400)
             return
 
         if poll_interval <= 0:
-            self._send_json({"success": False, "error": "poll_interval must be greater than 0"}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": "poll_interval must be greater than 0"}, status=400)
             return
 
         start_at_end = bool(payload.get("start_at_end", True))
@@ -1091,11 +1290,11 @@ class CompanionHandler(BaseHTTPRequestHandler):
             analyzer_config = _normalize_analyzer_config(payload.get("analyzer"))
             state = _start_file_watch(path, poll_interval, start_at_end, analyzer_config)
         except ValueError as exc:
-            self._send_json({"success": False, "error": str(exc)}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": str(exc)}, status=400)
             return
         except Exception as exc:
             log.exception("Failed to start file watch: %s", exc)
-            self._send_json({"success": False, "error": str(exc)}, status=500)
+            self._send_json({"success": False, "exit_code": -1, "error": str(exc)}, status=500)
             return
 
         log.info(
@@ -1112,31 +1311,31 @@ class CompanionHandler(BaseHTTPRequestHandler):
             body = self._read_body()
             payload = json.loads(body) if body else {}
         except (ValueError, OSError) as exc:
-            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": f"Invalid request: {exc}"}, status=400)
             return
 
         try:
             poll_interval = float(payload.get("poll_interval", FILE_WATCH_POLL_INTERVAL_SECONDS))
         except (TypeError, ValueError):
-            self._send_json({"success": False, "error": "poll_interval must be a number"}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": "poll_interval must be a number"}, status=400)
             return
 
         if poll_interval <= 0:
-            self._send_json({"success": False, "error": "poll_interval must be greater than 0"}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": "poll_interval must be greater than 0"}, status=400)
             return
 
         start_at_end = bool(payload.get("start_at_end", True))
 
         try:
             resolved = _resolve_import_log_path(payload)
-            analyzer_config = _normalize_analyzer_config(payload.get("analyzer", "import_log_unknown_attributes"))
+            analyzer_config = _normalize_analyzer_config(payload.get("analyzer", "import_log"))
             state = _start_file_watch(resolved["path"], poll_interval, start_at_end, analyzer_config)
         except ValueError as exc:
-            self._send_json({"success": False, "error": str(exc)}, status=400)
+            self._send_json({"success": False, "exit_code": -1, "error": str(exc)}, status=400)
             return
         except Exception as exc:
             log.exception("Failed to start Import.log watch: %s", exc)
-            self._send_json({"success": False, "error": str(exc)}, status=500)
+            self._send_json({"success": False, "exit_code": -1, "error": str(exc)}, status=500)
             return
 
         log.info(
