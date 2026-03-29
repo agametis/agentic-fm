@@ -20,12 +20,15 @@ import argparse
 import json
 import logging
 import os
+import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -38,6 +41,9 @@ from socketserver import ThreadingMixIn
 DEFAULT_PORT = 8765
 BIND_HOST = os.environ.get("COMPANION_BIND_HOST", "127.0.0.1")
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/petrowsky/agentic-fm/main/version.txt"
+FILE_WATCH_POLL_INTERVAL_SECONDS = 0.5
+FILE_WATCH_MAX_EVENTS = 100
+IMPORT_LOG_UNKNOWN_VALUE_RE = re.compile(r'Attribute value [“"](.+?)[”"] unknown\.')
 
 # Read version from version.txt at the repo root
 def _read_local_version() -> str:
@@ -64,6 +70,35 @@ _webviewer_lock = threading.Lock()
 _pending_job: dict = {}
 _pending_lock = threading.Lock()
 
+_file_watch_thread: "threading.Thread | None" = None
+_file_watch_stop_event: "threading.Event | None" = None
+_file_watch_lock = threading.Lock()
+_file_watch_condition = threading.Condition(_file_watch_lock)
+_file_watch_state: dict = {
+    "running": False,
+    "path": "",
+    "poll_interval": FILE_WATCH_POLL_INTERVAL_SECONDS,
+    "start_at_end": True,
+    "started_at": None,
+    "last_checked_at": None,
+    "last_change_at": None,
+    "last_event_at": None,
+    "offset": None,
+    "file_exists": False,
+    "revision": 0,
+    "analyzer": {"type": "import_log"},
+    "summary": {
+        "events_total": 0,
+        "errors_total": 0,
+        "matches_by_rule": {},
+        "current_import": {},
+        "last_completed_import": {},
+        "last_error": {},
+    },
+    "recent_events": [],
+    "last_error": "",
+}
+
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
@@ -76,6 +111,764 @@ logging.basicConfig(
 )
 log = logging.getLogger("companion_server")
 SUBPROCESS_HEARTBEAT_SECONDS = 5
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _clone_jsonable(data):
+    return json.loads(json.dumps(data, ensure_ascii=False))
+
+
+def _snapshot_file_watch_state() -> dict:
+    with _file_watch_lock:
+        return _clone_jsonable(_file_watch_state)
+
+
+def _watch_results_payload_from_state(state: dict) -> dict:
+    return {
+        "running": state["running"],
+        "path": state["path"],
+        "poll_interval": state["poll_interval"],
+        "start_at_end": state["start_at_end"],
+        "started_at": state["started_at"],
+        "file_exists": state["file_exists"],
+        "revision": state.get("revision", 0),
+        "analyzer": state["analyzer"],
+        "summary": state["summary"],
+        "recent_events": state["recent_events"],
+        "last_change_at": state["last_change_at"],
+        "last_event_at": state["last_event_at"],
+        "last_error": state["last_error"],
+    }
+
+
+def _current_watch_results_payload() -> dict:
+    return _watch_results_payload_from_state(_snapshot_file_watch_state())
+
+
+def _bump_file_watch_revision_locked() -> int:
+    _file_watch_state["revision"] = int(_file_watch_state.get("revision", 0)) + 1
+    _file_watch_condition.notify_all()
+    return _file_watch_state["revision"]
+
+
+def _normalize_analyzer_config(raw_analyzer) -> dict:
+    if not raw_analyzer:
+        return {"type": "import_log"}
+
+    if isinstance(raw_analyzer, str):
+        analyzer = {"type": raw_analyzer}
+    elif isinstance(raw_analyzer, dict):
+        analyzer = dict(raw_analyzer)
+    else:
+        raise ValueError("analyzer must be a string or object")
+
+    analyzer_type = analyzer.get("type", "import_log")
+    if analyzer_type in ("import_log", "import_log_unknown_attributes"):
+        return {"type": analyzer_type}
+
+    if analyzer_type != "regex":
+        raise ValueError("analyzer.type must be import_log, import_log_unknown_attributes, or regex")
+
+    rules = analyzer.get("rules")
+    if not isinstance(rules, list) or not rules:
+        raise ValueError("regex analyzer requires a non-empty rules array")
+
+    normalized_rules = []
+    for index, rule in enumerate(rules, start=1):
+        if not isinstance(rule, dict):
+            raise ValueError(f"regex rule #{index} must be an object")
+        name = str(rule.get("name") or f"rule_{index}")
+        pattern = rule.get("pattern") or rule.get("regex")
+        if not pattern:
+            raise ValueError(f"regex rule {name!r} is missing pattern")
+        flags = str(rule.get("flags", ""))
+        severity = str(rule.get("severity", "info"))
+        re_flags = 0
+        if "i" in flags.lower():
+            re_flags |= re.IGNORECASE
+        try:
+            re.compile(pattern, re_flags)
+        except re.error as exc:
+            raise ValueError(f"regex rule {name!r} is invalid: {exc}") from exc
+        normalized_rules.append(
+            {
+                "name": name,
+                "pattern": pattern,
+                "flags": flags,
+                "severity": severity,
+            }
+        )
+
+    return {"type": "regex", "rules": normalized_rules}
+
+
+def _build_analyzer_runtime(analyzer_config: dict) -> dict:
+    if analyzer_config["type"] != "regex":
+        return analyzer_config
+
+    runtime_rules = []
+    for rule in analyzer_config["rules"]:
+        re_flags = 0
+        if "i" in rule.get("flags", "").lower():
+            re_flags |= re.IGNORECASE
+        runtime_rules.append(
+            {
+                "name": rule["name"],
+                "severity": rule["severity"],
+                "compiled": re.compile(rule["pattern"], re_flags),
+            }
+        )
+    return {"type": "regex", "rules": runtime_rules}
+
+
+def _record_watch_event_locked(event: dict):
+    summary = _file_watch_state["summary"]
+    summary["events_total"] += 1
+    if event.get("severity") == "error":
+        summary["errors_total"] += 1
+        summary["last_error"] = event
+        current_import = summary.get("current_import") or {}
+        if current_import:
+            current_import["error_count"] = int(current_import.get("error_count", 0)) + 1
+            summary["current_import"] = current_import
+
+    rule = event.get("rule", "unknown")
+    summary["matches_by_rule"][rule] = summary["matches_by_rule"].get(rule, 0) + 1
+
+    _file_watch_state["last_event_at"] = event.get("detected_at")
+    _file_watch_state["recent_events"].append(event)
+    if len(_file_watch_state["recent_events"]) > FILE_WATCH_MAX_EVENTS:
+        _file_watch_state["recent_events"] = _file_watch_state["recent_events"][-FILE_WATCH_MAX_EVENTS:]
+    _bump_file_watch_revision_locked()
+
+
+def _parse_import_log_line(line: str) -> dict | None:
+    parts = line.split("\t", 3)
+    if len(parts) != 4:
+        return None
+
+    timestamp_str, source, code, message = parts
+    parsed = {
+        "timestamp": timestamp_str,
+        "source": source,
+        "code": code,
+        "message": message,
+        "raw_line": line,
+    }
+
+    source_parts = source.split("::")
+    if len(source_parts) >= 1:
+        parsed["script_name"] = source_parts[0]
+    if len(source_parts) >= 2:
+        parsed["script_line"] = source_parts[1]
+    if len(source_parts) >= 3:
+        parsed["step_name"] = source_parts[2]
+    if len(source_parts) >= 4:
+        parsed["attribute_name"] = source_parts[3]
+
+    unknown_match = IMPORT_LOG_UNKNOWN_VALUE_RE.search(message)
+    if unknown_match:
+        parsed["unknown_value"] = unknown_match.group(1)
+
+    imported_match = re.search(r"script steps imported\s*:\s*(\d+)", message)
+    if imported_match:
+        parsed["imported_steps"] = int(imported_match.group(1))
+
+    return parsed
+
+
+def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
+    parsed = _parse_import_log_line(line)
+    if not parsed:
+        return []
+
+    events = []
+    with _file_watch_lock:
+        summary = _file_watch_state["summary"]
+        message = parsed["message"]
+        code = parsed["code"]
+        source = parsed["source"]
+        state_changed = False
+
+        if message == "Import of script steps from clipboard started":
+            summary["current_import"] = {
+                "source": source,
+                "started_at": parsed["timestamp"],
+                "error_count": 0,
+            }
+            state_changed = True
+
+        if "imported_steps" in parsed:
+            current_import = summary.get("current_import") or {}
+            current_import["imported_steps"] = parsed["imported_steps"]
+            summary["current_import"] = current_import
+            state_changed = True
+
+        if message == "Import completed":
+            current_import = dict(summary.get("current_import") or {})
+            if current_import:
+                current_import["completed_at"] = parsed["timestamp"]
+                summary["last_completed_import"] = current_import
+            summary["current_import"] = {}
+            state_changed = True
+
+        if state_changed:
+            _bump_file_watch_revision_locked()
+
+        if code == "0":
+            return []
+
+        if analyzer_type == "import_log_unknown_attributes" and "unknown_value" not in parsed:
+            return []
+
+        rule_name = "unknown_attribute" if "unknown_value" in parsed else "import_log_error"
+        event = {
+            "detected_at": _utc_now_iso(),
+            "event_type": "import_log_issue",
+            "rule": rule_name,
+            "severity": "error",
+            "timestamp": parsed["timestamp"],
+            "source": source,
+            "code": code,
+            "message": message,
+            "script_name": parsed.get("script_name", ""),
+            "script_line": parsed.get("script_line", ""),
+            "step_name": parsed.get("step_name", ""),
+            "attribute_name": parsed.get("attribute_name", ""),
+            "unknown_value": parsed.get("unknown_value", ""),
+            "raw_line": parsed["raw_line"],
+        }
+        _record_watch_event_locked(event)
+        events.append(event)
+
+    return events
+
+
+def _process_regex_line(line: str, analyzer_runtime: dict) -> list[dict]:
+    events = []
+    for rule in analyzer_runtime["rules"]:
+        match = rule["compiled"].search(line)
+        if not match:
+            continue
+        event = {
+            "detected_at": _utc_now_iso(),
+            "event_type": "regex_match",
+            "rule": rule["name"],
+            "severity": rule["severity"],
+            "message": line,
+            "groups": match.groupdict() or {str(index): value for index, value in enumerate(match.groups(), start=1)},
+            "raw_line": line,
+        }
+        with _file_watch_lock:
+            _record_watch_event_locked(event)
+        events.append(event)
+    return events
+
+
+def _process_watch_lines(lines: list[str], analyzer_runtime: dict) -> list[dict]:
+    events = []
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if not stripped:
+            continue
+        if analyzer_runtime["type"] in ("import_log", "import_log_unknown_attributes"):
+            events.extend(_process_import_log_line(stripped, analyzer_runtime["type"]))
+        elif analyzer_runtime["type"] == "regex":
+            events.extend(_process_regex_line(stripped, analyzer_runtime))
+    return events
+
+
+def _watch_file_loop(path: str, poll_interval: float, start_at_end: bool, analyzer_runtime: dict, stop_event: threading.Event):
+    carryover = ""
+
+    while True:
+        if stop_event.wait(poll_interval):
+            return
+
+        file_exists = os.path.exists(path)
+        now = _utc_now_iso()
+        with _file_watch_lock:
+            file_exists_changed = _file_watch_state["file_exists"] != file_exists
+            _file_watch_state["last_checked_at"] = now
+            _file_watch_state["file_exists"] = file_exists
+            if file_exists_changed:
+                _bump_file_watch_revision_locked()
+
+        if not file_exists:
+            continue
+
+        try:
+            with _file_watch_lock:
+                current_offset = _file_watch_state["offset"]
+            file_size = os.path.getsize(path)
+
+            if current_offset is not None and file_size < current_offset:
+                carryover = ""
+                with _file_watch_lock:
+                    _file_watch_state["offset"] = 0
+                current_offset = 0
+                log.info("File watch reset offset after truncation: %s", path)
+
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                if current_offset is None:
+                    if start_at_end:
+                        f.seek(0, os.SEEK_END)
+                        new_offset = f.tell()
+                        with _file_watch_lock:
+                            _file_watch_state["offset"] = new_offset
+                        log.info("File watch attached to %s at end of file", path)
+                        continue
+                    current_offset = 0
+
+                f.seek(current_offset)
+                chunk = f.read()
+                new_offset = f.tell()
+
+            if new_offset == current_offset:
+                continue
+
+            text = carryover + chunk
+            split_lines = text.splitlines(keepends=True)
+            complete_lines = []
+            carryover = ""
+            for index, split_line in enumerate(split_lines):
+                is_last = index == len(split_lines) - 1
+                if is_last and not split_line.endswith(("\n", "\r")):
+                    carryover = split_line
+                else:
+                    complete_lines.append(split_line)
+
+            with _file_watch_lock:
+                _file_watch_state["offset"] = new_offset
+                _file_watch_state["last_change_at"] = now
+                _bump_file_watch_revision_locked()
+
+            events = _process_watch_lines(complete_lines, analyzer_runtime)
+            for event in events:
+                if event["event_type"] == "import_log_issue":
+                    log.warning(
+                        "File watch match [%s]: script=%s line=%s step=%s attribute=%s value=%s message=%s",
+                        event["rule"],
+                        event.get("script_name", ""),
+                        event.get("script_line", ""),
+                        event.get("step_name", ""),
+                        event.get("attribute_name", ""),
+                        event.get("unknown_value", ""),
+                        event.get("message", ""),
+                    )
+                else:
+                    log.warning(
+                        "File watch match [%s]: %s",
+                        event["rule"],
+                        event.get("message", ""),
+                    )
+        except Exception as exc:
+            with _file_watch_lock:
+                _file_watch_state["last_error"] = str(exc)
+                _bump_file_watch_revision_locked()
+            log.warning("File watch error for %s: %s", path, exc)
+
+
+def _stop_file_watch() -> bool:
+    global _file_watch_thread, _file_watch_stop_event
+    thread = None
+    with _file_watch_lock:
+        if _file_watch_stop_event is not None:
+            _file_watch_stop_event.set()
+        thread = _file_watch_thread
+
+    if thread is not None:
+        thread.join(timeout=2)
+
+    with _file_watch_lock:
+        was_running = _file_watch_state["running"]
+        _file_watch_thread = None
+        _file_watch_stop_event = None
+        _file_watch_state["running"] = False
+        _bump_file_watch_revision_locked()
+
+    return was_running
+
+
+def _start_file_watch(path: str, poll_interval: float, start_at_end: bool, analyzer_config: dict) -> dict:
+    global _file_watch_thread, _file_watch_stop_event
+
+    _stop_file_watch()
+
+    expanded_path = os.path.expanduser(path)
+    analyzer_runtime = _build_analyzer_runtime(analyzer_config)
+    initial_offset = None
+    if os.path.exists(expanded_path):
+        with open(expanded_path, "r", encoding="utf-8", errors="replace") as f:
+            if start_at_end:
+                f.seek(0, os.SEEK_END)
+                initial_offset = f.tell()
+            else:
+                initial_offset = 0
+
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_watch_file_loop,
+        args=(expanded_path, poll_interval, start_at_end, analyzer_runtime, stop_event),
+        daemon=True,
+    )
+
+    with _file_watch_lock:
+        _file_watch_stop_event = stop_event
+        _file_watch_thread = thread
+        _file_watch_state["running"] = True
+        _file_watch_state["path"] = expanded_path
+        _file_watch_state["poll_interval"] = poll_interval
+        _file_watch_state["start_at_end"] = start_at_end
+        _file_watch_state["started_at"] = _utc_now_iso()
+        _file_watch_state["last_checked_at"] = None
+        _file_watch_state["last_change_at"] = None
+        _file_watch_state["last_event_at"] = None
+        _file_watch_state["offset"] = initial_offset
+        _file_watch_state["file_exists"] = os.path.exists(expanded_path)
+        _file_watch_state["revision"] = 0
+        _file_watch_state["analyzer"] = _clone_jsonable(analyzer_config)
+        _file_watch_state["summary"] = {
+            "events_total": 0,
+            "errors_total": 0,
+            "matches_by_rule": {},
+            "current_import": {},
+            "last_completed_import": {},
+            "last_error": {},
+        }
+        _file_watch_state["recent_events"] = []
+        _file_watch_state["last_error"] = ""
+        _bump_file_watch_revision_locked()
+
+    thread.start()
+    return _snapshot_file_watch_state()
+
+
+def _resolve_import_log_path(payload: dict) -> dict:
+    explicit_path = payload.get("import_log_path", "")
+    if explicit_path:
+        return {
+            "location": "explicit",
+            "path": os.path.expanduser(explicit_path),
+        }
+
+    database_path = payload.get("database_path", "")
+    database_dir = payload.get("database_dir", "")
+    location = str(payload.get("location", "") or payload.get("mode", "")).strip().lower()
+    if not location:
+        location = "local" if database_path or database_dir else "server"
+
+    if location == "server":
+        documents_dir = os.path.expanduser(payload.get("documents_dir", "~/Documents"))
+        return {
+            "location": "server",
+            "path": os.path.join(documents_dir, "Import.log"),
+        }
+
+    if location == "local":
+        local_root = database_dir or database_path
+        if not local_root:
+            raise ValueError("database_path or database_dir is required when location is local")
+        expanded_local_root = os.path.expanduser(local_root)
+        if database_dir:
+            resolved_database_dir = expanded_local_root
+        elif expanded_local_root.endswith(os.sep) or os.path.isdir(expanded_local_root):
+            resolved_database_dir = expanded_local_root
+        elif expanded_local_root.lower().endswith(".fmp12"):
+            resolved_database_dir = os.path.dirname(expanded_local_root)
+        elif "." not in os.path.basename(expanded_local_root):
+            resolved_database_dir = expanded_local_root
+        else:
+            resolved_database_dir = os.path.dirname(expanded_local_root)
+        if not resolved_database_dir:
+            resolved_database_dir = os.getcwd()
+        return {
+            "location": "local",
+            "path": os.path.join(resolved_database_dir, "Import.log"),
+        }
+
+    raise ValueError("location must be server or local")
+
+
+def _build_watch_ui_html() -> str:
+    return """<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+  <title>Companion Watch</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0b1020; color: #e5e7eb; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .panel { background: #121933; border: 1px solid #26304f; border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+    .panel.full { grid-column: 1 / -1; }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 16px; }
+    .muted { color: #93a1c6; }
+    .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .row.single { grid-template-columns: 1fr; }
+    label { display: block; font-size: 12px; color: #93a1c6; margin-bottom: 6px; }
+    input, select, button, textarea { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid #334269; background: #0f1530; color: #eef2ff; padding: 10px 12px; font: inherit; }
+    textarea { min-height: 110px; resize: vertical; }
+    button { cursor: pointer; background: linear-gradient(180deg, #4169e1, #3558c8); border: none; font-weight: 600; }
+    button.secondary { background: #1a2342; border: 1px solid #334269; }
+    button.danger { background: linear-gradient(180deg, #c9405e, #a52d48); }
+    .button-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: #1a2342; color: #c7d2fe; font-size: 12px; margin-right: 8px; }
+    .badge.ok { background: #16351e; color: #9ae6b4; }
+    .badge.warn { background: #3a2712; color: #fbd38d; }
+    .badge.err { background: #3d1620; color: #feb2b2; }
+    .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px; font-size: 13px; }
+    .events { display: grid; gap: 10px; }
+    .event { border: 1px solid #2e395d; border-radius: 12px; padding: 12px; background: #0d1430; }
+    .event.error { border-color: #7f2940; }
+    .event .meta { color: #93a1c6; font-size: 12px; margin-bottom: 6px; }
+    .event .msg { white-space: pre-wrap; word-break: break-word; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: #0d1430; border: 1px solid #2e395d; border-radius: 12px; padding: 12px; }
+    @media (max-width: 900px) { .grid, .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class=\"wrap\">
+    <div style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap;\">
+      <div>
+        <h1>Companion Watch</h1>
+        <div class=\"muted\">Live file watch, Import.log auto-resolution, SSE stream, and recent event view.</div>
+      </div>
+      <div>
+        <span id=\"runningBadge\" class=\"badge\">stopped</span>
+        <span id=\"streamBadge\" class=\"badge\">stream idle</span>
+      </div>
+    </div>
+    <div class=\"grid\">
+      <section class=\"panel\">
+        <h2>Auto Import.log Watch</h2>
+        <div class=\"row\">
+          <div>
+            <label for=\"importLocation\">Location</label>
+            <select id=\"importLocation\">
+              <option value=\"server\">Server file</option>
+              <option value=\"local\">Local database file</option>
+            </select>
+          </div>
+          <div>
+            <label for=\"importAnalyzer\">Analyzer</label>
+            <select id=\"importAnalyzer\">
+              <option value=\"import_log_unknown_attributes\">Unknown attributes only</option>
+              <option value=\"import_log\">All Import.log issues</option>
+            </select>
+          </div>
+        </div>
+        <div class=\"row single\">
+          <div>
+            <label for=\"databasePath\">Database path or folder for local file mode</label>
+            <input id=\"databasePath\" placeholder=\"/path/to/MyFile.fmp12\">
+          </div>
+        </div>
+        <div class=\"row\">
+          <div>
+            <label for=\"documentsDir\">Documents dir for server mode</label>
+            <input id=\"documentsDir\" value=\"~/Documents\">
+          </div>
+          <div>
+            <label for=\"importPollInterval\">Poll interval</label>
+            <input id=\"importPollInterval\" value=\"0.5\">
+          </div>
+        </div>
+        <div class=\"button-row\">
+          <button id=\"startImportButton\">Start Import.log watch</button>
+        </div>
+      </section>
+      <section class=\"panel\">
+        <h2>Custom File Watch</h2>
+        <div class=\"row single\">
+          <div>
+            <label for=\"customPath\">File path</label>
+            <input id=\"customPath\" placeholder=\"/path/to/file.log\">
+          </div>
+        </div>
+        <div class=\"row\">
+          <div>
+            <label for=\"customAnalyzer\">Analyzer</label>
+            <select id=\"customAnalyzer\">
+              <option value=\"import_log_unknown_attributes\">Import.log unknown attributes</option>
+              <option value=\"import_log\">Import.log issues</option>
+            </select>
+          </div>
+          <div>
+            <label for=\"customPollInterval\">Poll interval</label>
+            <input id=\"customPollInterval\" value=\"0.5\">
+          </div>
+        </div>
+        <div class=\"row single\">
+          <div>
+            <label for=\"startAtEnd\">Start at end of file</label>
+            <select id=\"startAtEnd\">
+              <option value=\"true\">true</option>
+              <option value=\"false\">false</option>
+            </select>
+          </div>
+        </div>
+        <div class=\"button-row\">
+          <button id=\"startCustomButton\">Start custom watch</button>
+          <button id=\"stopButton\" class=\"danger\">Stop watch</button>
+          <button id=\"refreshButton\" class=\"secondary\">Refresh</button>
+        </div>
+      </section>
+      <section class=\"panel full\">
+        <h2>Status</h2>
+        <div id=\"statusGrid\" class=\"kv\"></div>
+      </section>
+      <section class=\"panel\">
+        <h2>Summary</h2>
+        <pre id=\"summaryView\">{}</pre>
+      </section>
+      <section class=\"panel\">
+        <h2>Current / Last Import</h2>
+        <pre id=\"importView\">{}</pre>
+      </section>
+      <section class=\"panel full\">
+        <h2>Recent Events</h2>
+        <div id=\"events\" class=\"events\"></div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let stream = null;
+
+    function escapeHtml(value) {
+      return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    }
+
+    async function request(path, method = 'GET', body = null) {
+      const response = await fetch(path, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : null,
+      });
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    function render(state) {
+      const running = Boolean(state.running);
+      $('runningBadge').textContent = running ? 'running' : 'stopped';
+      $('runningBadge').className = `badge ${running ? 'ok' : 'warn'}`;
+      $('statusGrid').innerHTML = [
+        ['Path', state.path || ''],
+        ['File exists', String(Boolean(state.file_exists))],
+        ['Analyzer', state.analyzer?.type || ''],
+        ['Poll interval', String(state.poll_interval ?? '')],
+        ['Started at', state.started_at || ''],
+        ['Last change', state.last_change_at || ''],
+        ['Last event', state.last_event_at || ''],
+        ['Last error', state.last_error || ''],
+        ['Revision', String(state.revision ?? '')],
+      ].map(([key, value]) => `<div class=\"muted\">${escapeHtml(key)}</div><div>${escapeHtml(value)}</div>`).join('');
+
+      $('summaryView').textContent = JSON.stringify(state.summary || {}, null, 2);
+      $('importView').textContent = JSON.stringify({
+        current_import: state.summary?.current_import || {},
+        last_completed_import: state.summary?.last_completed_import || {},
+      }, null, 2);
+
+      const events = [...(state.recent_events || [])].reverse();
+      $('events').innerHTML = events.length ? events.map((event) => {
+        const bits = [
+          event.detected_at || '',
+          event.rule || '',
+          event.script_name || '',
+          event.script_line || '',
+          event.step_name || '',
+          event.attribute_name || '',
+          event.unknown_value || '',
+        ].filter(Boolean).join(' · ');
+        return `<div class=\"event ${escapeHtml(event.severity || '')}\"><div class=\"meta\">${escapeHtml(bits)}</div><div class=\"msg\">${escapeHtml(event.message || event.raw_line || '')}</div></div>`;
+      }).join('') : '<div class=\"muted\">No events yet.</div>';
+    }
+
+    async function refresh() {
+      try {
+        const state = await request('/watch/results');
+        render(state);
+      } catch (error) {
+        $('streamBadge').textContent = error.message;
+        $('streamBadge').className = 'badge err';
+      }
+    }
+
+    function connectStream() {
+      if (stream) {
+        stream.close();
+      }
+      stream = new EventSource('/watch/stream');
+      $('streamBadge').textContent = 'connecting';
+      $('streamBadge').className = 'badge warn';
+      stream.addEventListener('results', (event) => {
+        $('streamBadge').textContent = 'live';
+        $('streamBadge').className = 'badge ok';
+        render(JSON.parse(event.data));
+      });
+      stream.onerror = () => {
+        $('streamBadge').textContent = 'reconnecting';
+        $('streamBadge').className = 'badge warn';
+      };
+    }
+
+    async function startImportWatch() {
+      const payload = {
+        location: $('importLocation').value,
+        database_path: $('databasePath').value.trim(),
+        documents_dir: $('documentsDir').value.trim(),
+        poll_interval: Number($('importPollInterval').value || '0.5'),
+        analyzer: $('importAnalyzer').value,
+        start_at_end: true,
+      };
+      await request('/watch/import-log/start', 'POST', payload);
+      await refresh();
+      connectStream();
+    }
+
+    async function startCustomWatch() {
+      const payload = {
+        path: $('customPath').value.trim(),
+        poll_interval: Number($('customPollInterval').value || '0.5'),
+        start_at_end: $('startAtEnd').value === 'true',
+        analyzer: $('customAnalyzer').value,
+      };
+      await request('/watch/start', 'POST', payload);
+      await refresh();
+      connectStream();
+    }
+
+    async function stopWatch() {
+      await request('/watch/stop', 'POST', {});
+      await refresh();
+    }
+
+    $('startImportButton').addEventListener('click', () => startImportWatch().catch((error) => alert(error.message)));
+    $('startCustomButton').addEventListener('click', () => startCustomWatch().catch((error) => alert(error.message)));
+    $('stopButton').addEventListener('click', () => stopWatch().catch((error) => alert(error.message)));
+    $('refreshButton').addEventListener('click', () => refresh().catch((error) => alert(error.message)));
+
+    connectStream();
+    refresh();
+    setInterval(() => refresh().catch(() => {}), 5000);
+  </script>
+</body>
+</html>
+"""
 
 
 def _stream_pipe(pipe, level, prefix, output_buffer, state):
@@ -167,6 +960,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 # ---------------------------------------------------------------------------
 
 class CompanionHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
         """Route access log through the standard logger."""
@@ -177,33 +971,49 @@ class CompanionHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def do_GET(self):
-        if self.path == "/health":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/health":
             self._handle_health()
-        elif self.path == "/pending":
+        elif path == "/pending":
             self._handle_pending_get()
-        elif self.path == "/webviewer/status":
+        elif path == "/watch/status":
+            self._handle_watch_status()
+        elif path == "/watch/results":
+            self._handle_watch_results()
+        elif path == "/watch/stream":
+            self._handle_watch_stream()
+        elif path == "/watch/ui":
+            self._handle_watch_ui()
+        elif path == "/webviewer/status":
             self._handle_webviewer_status()
         else:
             self._send_json({"error": "Not found"}, status=404)
 
     def do_POST(self):
-        if self.path == "/explode":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/explode":
             self._handle_explode()
-        elif self.path == "/context":
+        elif path == "/context":
             self._handle_context()
-        elif self.path == "/debug":
+        elif path == "/debug":
             self._handle_debug()
-        elif self.path == "/clipboard":
+        elif path == "/clipboard":
             self._handle_clipboard()
-        elif self.path == "/trigger":
+        elif path == "/trigger":
             self._handle_trigger()
-        elif self.path == "/pending":
+        elif path == "/pending":
             self._handle_pending_post()
-        elif self.path == "/webviewer/start":
+        elif path == "/watch/start":
+            self._handle_watch_start()
+        elif path == "/watch/import-log/start":
+            self._handle_watch_import_log_start()
+        elif path == "/watch/stop":
+            self._handle_watch_stop()
+        elif path == "/webviewer/start":
             self._handle_webviewer_start()
-        elif self.path == "/webviewer/stop":
+        elif path == "/webviewer/stop":
             self._handle_webviewer_stop()
-        elif self.path == "/webviewer/push":
+        elif path == "/webviewer/push":
             self._handle_webviewer_push()
         elif self.path == "/lint":
             self._handle_lint()
@@ -216,6 +1026,139 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
     def _handle_health(self):
         self._send_json({"status": "ok", "version": VERSION})
+
+    def _handle_watch_status(self):
+        self._send_json(_snapshot_file_watch_state())
+
+    def _handle_watch_results(self):
+        self._send_json(_current_watch_results_payload())
+
+    def _handle_watch_stream(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        last_revision = -1
+        try:
+            while True:
+                with _file_watch_lock:
+                    current_revision = _file_watch_state.get("revision", 0)
+                    if current_revision == last_revision:
+                        _file_watch_condition.wait(timeout=15)
+                        current_revision = _file_watch_state.get("revision", 0)
+                    payload = _watch_results_payload_from_state(_clone_jsonable(_file_watch_state))
+
+                if current_revision == last_revision:
+                    self._send_sse_event("ping", {"timestamp": _utc_now_iso()})
+                    continue
+
+                self._send_sse_event("results", payload, event_id=current_revision)
+                last_revision = current_revision
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, socket.timeout, OSError):
+            return
+
+    def _handle_watch_ui(self):
+        self._send_html(_build_watch_ui_html())
+
+    def _handle_watch_start(self):
+        try:
+            body = self._read_body()
+            payload = json.loads(body) if body else {}
+        except (ValueError, OSError) as exc:
+            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            return
+
+        path = payload.get("path", "")
+        if not path:
+            self._send_json({"success": False, "error": "Missing required field: path"}, status=400)
+            return
+
+        try:
+            poll_interval = float(payload.get("poll_interval", FILE_WATCH_POLL_INTERVAL_SECONDS))
+        except (TypeError, ValueError):
+            self._send_json({"success": False, "error": "poll_interval must be a number"}, status=400)
+            return
+
+        if poll_interval <= 0:
+            self._send_json({"success": False, "error": "poll_interval must be greater than 0"}, status=400)
+            return
+
+        start_at_end = bool(payload.get("start_at_end", True))
+
+        try:
+            analyzer_config = _normalize_analyzer_config(payload.get("analyzer"))
+            state = _start_file_watch(path, poll_interval, start_at_end, analyzer_config)
+        except ValueError as exc:
+            self._send_json({"success": False, "error": str(exc)}, status=400)
+            return
+        except Exception as exc:
+            log.exception("Failed to start file watch: %s", exc)
+            self._send_json({"success": False, "error": str(exc)}, status=500)
+            return
+
+        log.info(
+            "File watch started: path=%s analyzer=%s poll_interval=%ss start_at_end=%s",
+            state["path"],
+            state["analyzer"]["type"],
+            state["poll_interval"],
+            state["start_at_end"],
+        )
+        self._send_json({"success": True, "watch": state})
+
+    def _handle_watch_import_log_start(self):
+        try:
+            body = self._read_body()
+            payload = json.loads(body) if body else {}
+        except (ValueError, OSError) as exc:
+            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            return
+
+        try:
+            poll_interval = float(payload.get("poll_interval", FILE_WATCH_POLL_INTERVAL_SECONDS))
+        except (TypeError, ValueError):
+            self._send_json({"success": False, "error": "poll_interval must be a number"}, status=400)
+            return
+
+        if poll_interval <= 0:
+            self._send_json({"success": False, "error": "poll_interval must be greater than 0"}, status=400)
+            return
+
+        start_at_end = bool(payload.get("start_at_end", True))
+
+        try:
+            resolved = _resolve_import_log_path(payload)
+            analyzer_config = _normalize_analyzer_config(payload.get("analyzer", "import_log_unknown_attributes"))
+            state = _start_file_watch(resolved["path"], poll_interval, start_at_end, analyzer_config)
+        except ValueError as exc:
+            self._send_json({"success": False, "error": str(exc)}, status=400)
+            return
+        except Exception as exc:
+            log.exception("Failed to start Import.log watch: %s", exc)
+            self._send_json({"success": False, "error": str(exc)}, status=500)
+            return
+
+        log.info(
+            "Import.log watch started: location=%s path=%s analyzer=%s",
+            resolved["location"],
+            state["path"],
+            state["analyzer"]["type"],
+        )
+        self._send_json(
+            {
+                "success": True,
+                "location": resolved["location"],
+                "resolved_path": state["path"],
+                "watch": state,
+            }
+        )
+
+    def _handle_watch_stop(self):
+        was_running = _stop_file_watch()
+        if was_running:
+            log.info("File watch stopped")
+        self._send_json({"success": True, "status": "stopped" if was_running else "not_running"})
 
     def _handle_explode(self):
         # Read and parse request body
@@ -704,6 +1647,30 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_html(self, html_body: str, status: int = 200):
+        body = html_body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_sse_event(self, event_name: str, data, event_id=None):
+        if isinstance(data, str):
+            payload = data
+        else:
+            payload = json.dumps(data, ensure_ascii=False)
+        chunks = []
+        if event_id is not None:
+            chunks.append(f"id: {event_id}\n")
+        if event_name:
+            chunks.append(f"event: {event_name}\n")
+        for line in payload.splitlines() or [""]:
+            chunks.append(f"data: {line}\n")
+        chunks.append("\n")
+        self.wfile.write("".join(chunks).encode("utf-8"))
+        self.wfile.flush()
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -752,13 +1719,14 @@ def main():
 
     log.info("companion_server v%s listening on %s:%d", VERSION, BIND_HOST, port)
     threading.Thread(target=_check_for_updates, daemon=True).start()
-    log.info("Endpoints: GET /health  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push")
+    log.info("Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push")
     log.info("Press Ctrl-C to stop.")
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         log.info("Shutting down.")
+        _stop_file_watch()
         server.server_close()
         with _webviewer_lock:
             if _webviewer_proc is not None and _webviewer_proc.poll() is None:
