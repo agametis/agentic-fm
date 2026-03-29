@@ -396,6 +396,51 @@ def _classify_import_log_issue(parsed: dict) -> dict:
     }
 
 
+def _import_issue_label(issue: dict) -> str:
+    labels = {
+        "unknown_attribute_value": "Unknown attribute value",
+        "missing_attribute": "Missing attribute",
+        "missing_field": "Missing field",
+        "missing_field_reference": "Missing field reference",
+        "missing_layout": "Missing layout",
+        "missing_script": "Missing script",
+        "missing_function": "Missing function",
+        "missing_table_reference": "Missing table reference",
+        "unknown_error": "Unknown error",
+        "other": "Other error",
+    }
+    return labels.get(issue.get("category", "other"), "Import error")
+
+
+def _set_current_import_script_name(current_import: dict, parsed: dict):
+    script_name = str(parsed.get("script_name", "") or "").strip()
+    source = str(parsed.get("source", "") or "").strip()
+    database_name = str(current_import.get("database_name", "") or "").strip()
+    if not script_name and source and "::" not in source and source != database_name:
+        script_name = source
+    if script_name:
+        current_import["script_name"] = script_name
+
+
+def _append_import_error_locked(current_import: dict, parsed: dict, issue: dict):
+    errors = current_import.setdefault("errors", [])
+    errors.append(
+        {
+            "timestamp": parsed["timestamp"],
+            "script_name": parsed.get("script_name", ""),
+            "line_number": parsed.get("script_line", ""),
+            "step_name": parsed.get("step_name", ""),
+            "attribute_name": parsed.get("attribute_name", ""),
+            "code": parsed["code"],
+            "rule": issue["rule"],
+            "category": issue["category"],
+            "label": _import_issue_label(issue),
+            "message": parsed["message"],
+            "raw_line": parsed["raw_line"],
+        }
+    )
+
+
 def _append_recent_import_locked(import_summary: dict):
     recent_imports = _file_watch_state["summary"].setdefault("recent_imports", [])
     recent_imports.append(import_summary)
@@ -415,6 +460,7 @@ def _record_import_lifecycle_event_locked(parsed: dict, rule: str, severity: str
         "message": message if message is not None else parsed["message"],
         "script_name": parsed.get("script_name", ""),
         "script_line": parsed.get("script_line", ""),
+        "line_number": parsed.get("script_line", ""),
         "step_name": parsed.get("step_name", ""),
         "attribute_name": parsed.get("attribute_name", ""),
         "unknown_value": parsed.get("unknown_value", ""),
@@ -440,8 +486,10 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
         if message == "Import of script steps from clipboard started":
             summary["current_import"] = {
                 "source": source,
+                "database_name": source,
                 "started_at": parsed["timestamp"],
                 "error_count": 0,
+                "errors": [],
             }
             events.append(
                 _record_import_lifecycle_event_locked(
@@ -457,9 +505,12 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
             if not current_import:
                 current_import = {
                     "source": source,
+                    "database_name": source,
                     "started_at": parsed["timestamp"],
                     "error_count": 0,
+                    "errors": [],
                 }
+            _set_current_import_script_name(current_import, parsed)
             current_import["imported_steps"] = parsed["imported_steps"]
             summary["current_import"] = current_import
             events.append(
@@ -510,6 +561,11 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
             return events
 
         issue = _classify_import_log_issue(parsed)
+        current_import = summary.get("current_import") or {}
+        if current_import:
+            _set_current_import_script_name(current_import, parsed)
+            _append_import_error_locked(current_import, parsed, issue)
+            summary["current_import"] = current_import
         event = {
             "detected_at": _utc_now_iso(),
             "event_type": "import_log_issue",
@@ -519,9 +575,11 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
             "source": source,
             "code": code,
             "category": issue["category"],
+            "label": _import_issue_label(issue),
             "message": message,
             "script_name": parsed.get("script_name", ""),
             "script_line": parsed.get("script_line", ""),
+            "line_number": parsed.get("script_line", ""),
             "step_name": parsed.get("step_name", ""),
             "attribute_name": parsed.get("attribute_name", ""),
             "unknown_value": parsed.get("unknown_value", ""),
@@ -781,290 +839,9 @@ def _resolve_import_log_path(payload: dict) -> dict:
 
 
 def _build_watch_ui_html() -> str:
-    return """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Companion Watch</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0b1020; color: #e5e7eb; }
-    .wrap { max-width: 1180px; margin: 0 auto; padding: 24px; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .panel { background: #121933; border: 1px solid #26304f; border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
-    .panel.full { grid-column: 1 / -1; }
-    h1, h2 { margin: 0 0 12px; }
-    h1 { font-size: 24px; }
-    h2 { font-size: 16px; }
-    .muted { color: #93a1c6; }
-    .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-    .row.single { grid-template-columns: 1fr; }
-    label { display: block; font-size: 12px; color: #93a1c6; margin-bottom: 6px; }
-    input, select, button, textarea { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid #334269; background: #0f1530; color: #eef2ff; padding: 10px 12px; font: inherit; }
-    textarea { min-height: 110px; resize: vertical; }
-    button { cursor: pointer; background: linear-gradient(180deg, #4169e1, #3558c8); border: none; font-weight: 600; }
-    button.secondary { background: #1a2342; border: 1px solid #334269; }
-    button.danger { background: linear-gradient(180deg, #c9405e, #a52d48); }
-    .button-row { display: flex; gap: 10px; flex-wrap: wrap; }
-    .badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: #1a2342; color: #c7d2fe; font-size: 12px; margin-right: 8px; }
-    .badge.ok { background: #16351e; color: #9ae6b4; }
-    .badge.warn { background: #3a2712; color: #fbd38d; }
-    .badge.err { background: #3d1620; color: #feb2b2; }
-    .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px; font-size: 13px; }
-    .events { display: grid; gap: 10px; }
-    .event { border: 1px solid #2e395d; border-radius: 12px; padding: 12px; background: #0d1430; }
-    .event.info { border-color: #2f5d8a; }
-    .event.warn { border-color: #8a6a2f; }
-    .event.error { border-color: #7f2940; }
-    .event .meta { color: #93a1c6; font-size: 12px; margin-bottom: 6px; }
-    .event .msg { white-space: pre-wrap; word-break: break-word; }
-    pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: #0d1430; border: 1px solid #2e395d; border-radius: 12px; padding: 12px; }
-    @media (max-width: 900px) { .grid, .row { grid-template-columns: 1fr; } }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
-      <div>
-        <h1>Companion Watch</h1>
-        <div class="muted">Live file watch, Import.log auto-resolution, SSE stream, and recent event view.</div>
-      </div>
-      <div>
-        <span id="runningBadge" class="badge">stopped</span>
-        <span id="streamBadge" class="badge">stream idle</span>
-      </div>
-    </div>
-    <div class="grid">
-      <section class="panel">
-        <h2>Auto Import.log Watch</h2>
-        <div class="row">
-          <div>
-            <label for="importLocation">Location</label>
-            <select id="importLocation">
-              <option value="server">Server file</option>
-              <option value="local">Local database file</option>
-            </select>
-          </div>
-          <div>
-            <label for="importAnalyzer">Analyzer</label>
-            <select id="importAnalyzer">
-              <option value="import_log">All Import.log issues</option>
-              <option value="import_log_unknown_attributes">Unknown attributes only</option>
-            </select>
-          </div>
-        </div>
-        <div class="row single">
-          <div>
-            <label for="databasePath">Database path or folder for local file mode</label>
-            <input id="databasePath" placeholder="/path/to/MyFile.fmp12">
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label for="documentsDir">Documents dir for server mode</label>
-            <input id="documentsDir" value="~/Documents">
-          </div>
-          <div>
-            <label for="importPollInterval">Poll interval</label>
-            <input id="importPollInterval" value="0.5">
-          </div>
-        </div>
-        <div class="button-row">
-          <button id="startImportButton">Start Import.log watch</button>
-        </div>
-      </section>
-      <section class="panel">
-        <h2>Custom File Watch</h2>
-        <div class="row single">
-          <div>
-            <label for="customPath">File path</label>
-            <input id="customPath" placeholder="/path/to/file.log">
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label for="customAnalyzer">Analyzer</label>
-            <select id="customAnalyzer">
-              <option value="import_log">Import.log issues</option>
-              <option value="import_log_unknown_attributes">Import.log unknown attributes</option>
-            </select>
-          </div>
-          <div>
-            <label for="customPollInterval">Poll interval</label>
-            <input id="customPollInterval" value="0.5">
-          </div>
-        </div>
-        <div class="row single">
-          <div>
-            <label for="startAtEnd">Start at end of file</label>
-            <select id="startAtEnd">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </div>
-        </div>
-        <div class="button-row">
-          <button id="startCustomButton">Start custom watch</button>
-          <button id="stopButton" class="danger">Stop watch</button>
-          <button id="refreshButton" class="secondary">Refresh</button>
-        </div>
-      </section>
-      <section class="panel full">
-        <h2>Status</h2>
-        <div id="statusGrid" class="kv"></div>
-      </section>
-      <section class="panel">
-        <h2>Summary</h2>
-        <pre id="summaryView">{}</pre>
-      </section>
-      <section class="panel">
-        <h2>Current / Last Import</h2>
-        <pre id="importView">{}</pre>
-      </section>
-      <section class="panel full">
-        <h2>Recent Events</h2>
-        <div id="events" class="events"></div>
-      </section>
-    </div>
-  </div>
-  <script>
-    const $ = (id) => document.getElementById(id);
-    let stream = null;
-
-    function escapeHtml(value) {
-      return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-    }
-
-    async function request(path, method = 'GET', body = null) {
-      const response = await fetch(path, {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
-        body: body ? JSON.stringify(body) : null,
-      });
-      const text = await response.text();
-      const data = text ? JSON.parse(text) : {};
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}`);
-      }
-      return data;
-    }
-
-    function render(state) {
-      const running = Boolean(state.running);
-      $('runningBadge').textContent = running ? 'running' : 'stopped';
-      $('runningBadge').className = `badge ${running ? 'ok' : 'warn'}`;
-      $('statusGrid').innerHTML = [
-        ['Path', state.path || ''],
-        ['File exists', String(Boolean(state.file_exists))],
-        ['Analyzer', state.analyzer?.type || ''],
-        ['Poll interval', String(state.poll_interval ?? '')],
-        ['Started at', state.started_at || ''],
-        ['Last change', state.last_change_at || ''],
-        ['Last event', state.last_event_at || ''],
-        ['Last error', state.last_error || ''],
-        ['Revision', String(state.revision ?? '')],
-      ].map(([key, value]) => `<div class=\"muted\">${escapeHtml(key)}</div><div>${escapeHtml(value)}</div>`).join('');
-
-      $('summaryView').textContent = JSON.stringify(state.summary || {}, null, 2);
-      $('importView').textContent = JSON.stringify({
-        current_import: state.summary?.current_import || {},
-        last_completed_import: state.summary?.last_completed_import || {},
-        recent_imports: state.summary?.recent_imports || [],
-      }, null, 2);
-
-      const events = [...(state.recent_events || [])].reverse();
-      $('events').innerHTML = events.length ? events.map((event) => {
-        const bits = [
-          event.detected_at || '',
-          event.severity || '',
-          event.rule || '',
-          event.code ? `code ${event.code}` : '',
-          event.import_status || '',
-          event.imported_steps ? `steps ${event.imported_steps}` : '',
-          Number.isFinite(event.error_count) ? `errors ${event.error_count}` : '',
-          event.script_name || '',
-          event.source || '',
-          event.script_line || '',
-          event.step_name || '',
-          event.attribute_name || '',
-          event.unknown_value || '',
-        ].filter(Boolean).join(' · ');
-        return `<div class=\"event ${escapeHtml(event.severity || '')}\"><div class=\"meta\">${escapeHtml(bits)}</div><div class=\"msg\">${escapeHtml(event.message || event.raw_line || '')}</div></div>`;
-      }).join('') : '<div class=\"muted\">No events yet.</div>';
-    }
-
-    async function refresh() {
-      try {
-        const state = await request('/watch/results');
-        render(state);
-      } catch (error) {
-        $('streamBadge').textContent = error.message;
-        $('streamBadge').className = 'badge err';
-      }
-    }
-
-    function connectStream() {
-      if (stream) {
-        stream.close();
-      }
-      stream = new EventSource('/watch/stream');
-      $('streamBadge').textContent = 'connecting';
-      $('streamBadge').className = 'badge warn';
-      stream.addEventListener('results', (event) => {
-        $('streamBadge').textContent = 'live';
-        $('streamBadge').className = 'badge ok';
-        render(JSON.parse(event.data));
-      });
-      stream.onerror = () => {
-        $('streamBadge').textContent = 'reconnecting';
-        $('streamBadge').className = 'badge warn';
-      };
-    }
-
-    async function startImportWatch() {
-      const payload = {
-        location: $('importLocation').value,
-        database_path: $('databasePath').value.trim(),
-        documents_dir: $('documentsDir').value.trim(),
-        poll_interval: Number($('importPollInterval').value || '0.5'),
-        analyzer: $('importAnalyzer').value,
-        start_at_end: true,
-      };
-      await request('/watch/import-log/start', 'POST', payload);
-      await refresh();
-      connectStream();
-    }
-
-    async function startCustomWatch() {
-      const payload = {
-        path: $('customPath').value.trim(),
-        poll_interval: Number($('customPollInterval').value || '0.5'),
-        start_at_end: $('startAtEnd').value === 'true',
-        analyzer: $('customAnalyzer').value,
-      };
-      await request('/watch/start', 'POST', payload);
-      await refresh();
-      connectStream();
-    }
-
-    async function stopWatch() {
-      await request('/watch/stop', 'POST', {});
-      await refresh();
-    }
-
-    $('startImportButton').addEventListener('click', () => startImportWatch().catch((error) => alert(error.message)));
-    $('startCustomButton').addEventListener('click', () => startCustomWatch().catch((error) => alert(error.message)));
-    $('stopButton').addEventListener('click', () => stopWatch().catch((error) => alert(error.message)));
-    $('refreshButton').addEventListener('click', () => refresh().catch((error) => alert(error.message)));
-
-    connectStream();
-    refresh();
-    setInterval(() => refresh().catch(() => {}), 5000);
-  </script>
-</body>
-</html>
-"""
+    ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "companion_watch_ui.html")
+    with open(ui_path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 def _stream_pipe(pipe, level, prefix, output_buffer, state):

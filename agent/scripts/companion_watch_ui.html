@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>agentic-fm: Script Import Companion</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, sans-serif;
+        background: #0b1020;
+        color: #e5e7eb;
+      }
+      .wrap {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .panel {
+        background: #121933;
+        border: 1px solid #26304f;
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      }
+      .panel.full {
+        grid-column: 1 / -1;
+      }
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+      h1 {
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+      h2 {
+        font-size: 16px;
+        margin-bottom: 12px;
+      }
+      h3 {
+        font-size: 17px;
+      }
+      .muted {
+        color: #93a1c6;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .row.single {
+        grid-template-columns: 1fr;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: #93a1c6;
+        margin-bottom: 6px;
+      }
+      input,
+      select,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 10px;
+        border: 1px solid #334269;
+        background: #0f1530;
+        color: #eef2ff;
+        padding: 10px 12px;
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        background: linear-gradient(180deg, #4169e1, #3558c8);
+        border: none;
+        font-weight: 600;
+      }
+      button.secondary {
+        background: #1a2342;
+        border: 1px solid #334269;
+      }
+      button.danger {
+        background: linear-gradient(180deg, #c9405e, #a52d48);
+      }
+      .button-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .button-row > * {
+        flex: 1 1 180px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #1a2342;
+        color: #c7d2fe;
+        font-size: 12px;
+      }
+      .badge.ok {
+        background: #16351e;
+        color: #9ae6b4;
+      }
+      .badge.warn {
+        background: #3a2712;
+        color: #fbd38d;
+      }
+      .badge.err {
+        background: #3d1620;
+        color: #feb2b2;
+      }
+      .badge.info {
+        background: #162b4d;
+        color: #93c5fd;
+      }
+      .status-grid {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .stats {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .stat {
+        min-width: 140px;
+        background: #0d1430;
+        border: 1px solid #2e395d;
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .stat .label {
+        color: #93a1c6;
+        font-size: 12px;
+      }
+      .stat .value {
+        font-size: 24px;
+        font-weight: 700;
+        margin-top: 4px;
+      }
+      .imports {
+        display: grid;
+        gap: 14px;
+      }
+      .import-card {
+        background: #0d1430;
+        border: 1px solid #2e395d;
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .import-card.ok {
+        border-color: #215032;
+      }
+      .import-card.warn {
+        border-color: #7a5a26;
+      }
+      .import-card.running {
+        border-color: #2f5d8a;
+      }
+      .import-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        border-bottom: 1px solid #223053;
+      }
+      .import-head-left {
+        min-width: 0;
+      }
+      .import-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .import-subtitle {
+        margin-top: 6px;
+        color: #93a1c6;
+        font-size: 13px;
+      }
+      .import-head-right {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .import-body {
+        padding: 10px 0;
+      }
+      .error-list {
+        display: grid;
+      }
+      .error-row {
+        display: grid;
+        grid-template-columns: 110px 1fr;
+        gap: 12px;
+        padding: 10px 16px;
+        border-top: 1px solid #1b2748;
+      }
+      .error-row:first-child {
+        border-top: none;
+      }
+      .line-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        border-radius: 999px;
+        background: #182344;
+        color: #e0e7ff;
+        font-weight: 700;
+        padding: 0 12px;
+      }
+      .line-pill.empty {
+        background: #20283c;
+        color: #a5b4d4;
+      }
+      .error-meta {
+        color: #b9c4e3;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+      .error-message {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 14px;
+      }
+      .empty-state {
+        padding: 14px 16px;
+        color: #93a1c6;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 900px) {
+        .grid,
+        .row {
+          grid-template-columns: 1fr;
+        }
+        .status-grid {
+          grid-template-columns: 1fr;
+        }
+        .import-head {
+          flex-direction: column;
+        }
+        .import-head-right {
+          justify-content: flex-start;
+        }
+        .error-row {
+          grid-template-columns: 1fr;
+        }
+        .line-pill {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        "
+      >
+        <div>
+          <h1>Companion Watch</h1>
+          <div class="muted">
+            Import sessions with script headers, imported line counts, and
+            compact line-first error rows.
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+          <span id="runningBadge" class="badge">stopped</span>
+          <span id="streamBadge" class="badge">stream idle</span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>Auto Import.log Watch</h2>
+          <div class="row">
+            <div>
+              <label for="importLocation">Location</label>
+              <select id="importLocation">
+                <option value="server">Server file</option>
+                <option value="local">Local database file</option>
+              </select>
+            </div>
+            <div>
+              <label for="importAnalyzer">Analyzer</label>
+              <select id="importAnalyzer">
+                <option value="import_log">All Import.log issues</option>
+                <option value="import_log_unknown_attributes">
+                  Unknown attributes only
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="row single">
+            <div>
+              <label for="databasePath"
+                >Database path or folder for local file mode</label
+              >
+              <input id="databasePath" placeholder="/path/to/MyFile.fmp12" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="documentsDir">Documents dir for server mode</label>
+              <input id="documentsDir" value="~/Documents" />
+            </div>
+            <div>
+              <label for="importPollInterval">Poll interval</label>
+              <input id="importPollInterval" value="0.5" />
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="startImportButton">Start Import.log watch</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Custom File Watch</h2>
+          <div class="row single">
+            <div>
+              <label for="customPath">File path</label>
+              <input id="customPath" placeholder="/path/to/file.log" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="customAnalyzer">Analyzer</label>
+              <select id="customAnalyzer">
+                <option value="import_log">Import.log issues</option>
+                <option value="import_log_unknown_attributes">
+                  Import.log unknown attributes
+                </option>
+              </select>
+            </div>
+            <div>
+              <label for="customPollInterval">Poll interval</label>
+              <input id="customPollInterval" value="0.5" />
+            </div>
+          </div>
+          <div class="row single">
+            <div>
+              <label for="startAtEnd">Start at end of file</label>
+              <select id="startAtEnd">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="startCustomButton">Start custom watch</button>
+            <button id="stopButton" class="danger">Stop watch</button>
+            <button id="refreshButton" class="secondary">Refresh</button>
+          </div>
+        </section>
+
+        <section class="panel full">
+          <h2>Status</h2>
+          <div id="statusGrid" class="status-grid"></div>
+        </section>
+
+        <section class="panel full">
+          <h2>Import Summary</h2>
+          <div id="stats" class="stats"></div>
+        </section>
+
+        <section class="panel full">
+          <h2>Recent Imports</h2>
+          <div id="imports" class="imports"></div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let stream = null;
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      async function request(path, method = "GET", body = null) {
+        const response = await fetch(path, {
+          method,
+          headers: body ? { "Content-Type": "application/json" } : {},
+          body: body ? JSON.stringify(body) : null,
+        });
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!response.ok) {
+          throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        return data;
+      }
+
+      function displayScriptName(importItem) {
+        return (
+          importItem.script_name ||
+          importItem.source ||
+          importItem.database_name ||
+          "Unknown script"
+        );
+      }
+
+      function displayImportSource(importItem) {
+        const source = importItem.database_name || importItem.source || "";
+        return source && source !== displayScriptName(importItem) ? source : "";
+      }
+
+      function renderStatus(state) {
+        const running = Boolean(state.running);
+        $("runningBadge").textContent = running ? "running" : "stopped";
+        $("runningBadge").className = `badge ${running ? "ok" : "warn"}`;
+        $("statusGrid").innerHTML = [
+          ["Path", state.path || ""],
+          ["File exists", String(Boolean(state.file_exists))],
+          ["Analyzer", state.analyzer?.type || ""],
+          ["Poll interval", String(state.poll_interval ?? "")],
+          ["Started at", state.started_at || ""],
+          ["Last change", state.last_change_at || ""],
+          ["Last event", state.last_event_at || ""],
+          ["Last error", state.last_error || ""],
+          ["Revision", String(state.revision ?? "")],
+        ]
+          .map(
+            ([key, value]) =>
+              `<div class="muted">${escapeHtml(key)}</div><div>${escapeHtml(value)}</div>`,
+          )
+          .join("");
+      }
+
+      function renderStats(summary = {}) {
+        const stats = [
+          ["Imports", summary.imports_total ?? 0],
+          ["No errors", summary.imports_without_errors ?? 0],
+          ["With errors", summary.imports_with_errors ?? 0],
+          ["Total errors", summary.errors_total ?? 0],
+          ["Total events", summary.events_total ?? 0],
+        ];
+        $("stats").innerHTML = stats
+          .map(
+            ([label, value]) => `
+        <div class="stat">
+          <div class="label">${escapeHtml(label)}</div>
+          <div class="value">${escapeHtml(value)}</div>
+        </div>
+      `,
+          )
+          .join("");
+      }
+
+      function renderErrorRow(error) {
+        const lineText = error.line_number
+          ? `Line ${error.line_number}`
+          : "No line";
+        const meta = [
+          error.step_name || "",
+          error.label || "",
+          error.code ? `code ${error.code}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return `
+        <div class="error-row">
+          <div><span class="line-pill${error.line_number ? "" : " empty"}">${escapeHtml(lineText)}</span></div>
+          <div>
+            <div class="error-meta">${escapeHtml(meta)}</div>
+            <div class="error-message">${escapeHtml(error.message || "")}</div>
+          </div>
+        </div>
+      `;
+      }
+
+      function renderImportCard(importItem, isCurrent = false) {
+        const errors = Array.isArray(importItem.errors)
+          ? importItem.errors
+          : [];
+        const status = importItem.status || (isCurrent ? "running" : "ok");
+        const statusClass =
+          status === "with_errors"
+            ? "warn"
+            : status === "running"
+              ? "running"
+              : "ok";
+        const statusText =
+          status === "with_errors"
+            ? "with errors"
+            : status === "running"
+              ? "running"
+              : "ok";
+        const importedSteps = importItem.imported_steps ?? "—";
+        const source = displayImportSource(importItem);
+        const subtitleBits = [
+          source,
+          importItem.started_at ? `started ${importItem.started_at}` : "",
+          importItem.completed_at ? `completed ${importItem.completed_at}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        const body = errors.length
+          ? `<div class="error-list">${errors.map(renderErrorRow).join("")}</div>`
+          : `<div class="empty-state">${status === "running" ? "Import running. No errors recorded yet." : "No errors occurred during this import."}</div>`;
+        return `
+        <article class="import-card ${escapeHtml(statusClass)}">
+          <div class="import-head">
+            <div class="import-head-left">
+              <div class="import-title">
+                <h3>${escapeHtml(displayScriptName(importItem))}</h3>
+                <span class="badge ${statusClass === "warn" ? "warn" : statusClass === "running" ? "info" : "ok"}">${escapeHtml(statusText)}</span>
+                ${isCurrent ? '<span class="badge info">current</span>' : ""}
+              </div>
+              <div class="import-subtitle">${escapeHtml(subtitleBits || "No source metadata")}</div>
+            </div>
+            <div class="import-head-right">
+              <span class="badge info">lines imported ${escapeHtml(importedSteps)}</span>
+              <span class="badge ${errors.length ? "err" : "ok"}">errors ${escapeHtml(importItem.error_count ?? errors.length)}</span>
+            </div>
+          </div>
+          <div class="import-body">${body}</div>
+        </article>
+      `;
+      }
+
+      function renderImports(summary = {}) {
+        const imports = [];
+        const currentImport = summary.current_import || {};
+        if (
+          currentImport &&
+          (currentImport.started_at ||
+            currentImport.script_name ||
+            currentImport.source)
+        ) {
+          imports.push(renderImportCard(currentImport, true));
+        }
+        const recentImports = [...(summary.recent_imports || [])].reverse();
+        for (const importItem of recentImports) {
+          imports.push(renderImportCard(importItem, false));
+        }
+        $("imports").innerHTML = imports.length
+          ? imports.join("")
+          : '<div class="empty-state">No imports recorded yet.</div>';
+      }
+
+      function render(state) {
+        renderStatus(state);
+        renderStats(state.summary || {});
+        renderImports(state.summary || {});
+      }
+
+      async function refresh() {
+        try {
+          const state = await request("/watch/results");
+          render(state);
+        } catch (error) {
+          $("streamBadge").textContent = error.message;
+          $("streamBadge").className = "badge err";
+        }
+      }
+
+      function connectStream() {
+        if (stream) {
+          stream.close();
+        }
+        stream = new EventSource("/watch/stream");
+        $("streamBadge").textContent = "connecting";
+        $("streamBadge").className = "badge warn";
+        stream.addEventListener("results", (event) => {
+          $("streamBadge").textContent = "live";
+          $("streamBadge").className = "badge ok";
+          render(JSON.parse(event.data));
+        });
+        stream.onerror = () => {
+          $("streamBadge").textContent = "reconnecting";
+          $("streamBadge").className = "badge warn";
+        };
+      }
+
+      async function startImportWatch() {
+        const payload = {
+          location: $("importLocation").value,
+          database_path: $("databasePath").value.trim(),
+          documents_dir: $("documentsDir").value.trim(),
+          poll_interval: Number($("importPollInterval").value || "0.5"),
+          analyzer: $("importAnalyzer").value,
+          start_at_end: true,
+        };
+        await request("/watch/import-log/start", "POST", payload);
+        await refresh();
+        connectStream();
+      }
+
+      async function startCustomWatch() {
+        const payload = {
+          path: $("customPath").value.trim(),
+          poll_interval: Number($("customPollInterval").value || "0.5"),
+          start_at_end: $("startAtEnd").value === "true",
+          analyzer: $("customAnalyzer").value,
+        };
+        await request("/watch/start", "POST", payload);
+        await refresh();
+        connectStream();
+      }
+
+      async function stopWatch() {
+        await request("/watch/stop", "POST", {});
+        await refresh();
+      }
+
+      $("startImportButton").addEventListener("click", () =>
+        startImportWatch().catch((error) => alert(error.message)),
+      );
+      $("startCustomButton").addEventListener("click", () =>
+        startCustomWatch().catch((error) => alert(error.message)),
+      );
+      $("stopButton").addEventListener("click", () =>
+        stopWatch().catch((error) => alert(error.message)),
+      );
+      $("refreshButton").addEventListener("click", () =>
+        refresh().catch((error) => alert(error.message)),
+      );
+
+      connectStream();
+      refresh();
+      setInterval(() => refresh().catch(() => {}), 5000);
+    </script>
+  </body>
+</html>
