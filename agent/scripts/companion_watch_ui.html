@@ -62,7 +62,7 @@
       .row.single {
         grid-template-columns: 1fr;
       }
-      .row.compact-poll {
+      .row.top-controls {
         grid-template-columns: minmax(0, 1.8fr) minmax(110px, 160px);
       }
       .compact-field {
@@ -306,8 +306,8 @@
         <div>
           <h1>Companion Watch</h1>
           <div class="muted">
-            Import sessions with script headers, imported line counts, and
-            compact line-first error rows.
+            Track each import with its script name, imported line count, and
+            clear error details.
           </div>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap">
@@ -319,7 +319,7 @@
       <div class="grid">
         <section class="panel">
           <h2>Auto Import.log Watch</h2>
-          <div class="row">
+          <div class="row top-controls">
             <div>
               <label for="importLocation">Location</label>
               <select id="importLocation">
@@ -327,14 +327,9 @@
                 <option value="local">Local database file</option>
               </select>
             </div>
-            <div>
-              <label for="importAnalyzer">Analyzer</label>
-              <select id="importAnalyzer">
-                <option value="import_log">All Import.log issues</option>
-                <option value="import_log_unknown_attributes">
-                  Unknown attributes only
-                </option>
-              </select>
+            <div class="compact-field">
+              <label for="importPollInterval">Poll interval</label>
+              <input id="importPollInterval" value="0.5" />
             </div>
           </div>
           <div class="row single">
@@ -349,17 +344,13 @@
               </div>
             </div>
           </div>
-          <div class="row compact-poll">
+          <div class="row single">
             <div>
               <label for="documentsDir">Documents dir for server mode</label>
               <div class="input-with-actions">
                 <input id="documentsDir" placeholder="Documents folder" />
                 <button type="button" id="browseDocumentsDirButton" class="secondary">Browse…</button>
               </div>
-            </div>
-            <div class="compact-field">
-              <label for="importPollInterval">Poll interval</label>
-              <input id="importPollInterval" value="0.5" />
             </div>
           </div>
           <div class="button-row">
@@ -706,7 +697,7 @@
           database_path: $("databasePath").value.trim(),
           documents_dir: $("documentsDir").value.trim(),
           poll_interval: Number($("importPollInterval").value || "0.5"),
-          analyzer: $("importAnalyzer").value,
+          analyzer: "import_log",
           start_at_end: true,
         };
         await request("/watch/import-log/start", "POST", payload);
