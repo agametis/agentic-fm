@@ -68,6 +68,32 @@
       .compact-field {
         max-width: 160px;
       }
+      .header-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+      }
+      .header-button {
+        width: auto;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        line-height: 1.1;
+        white-space: nowrap;
+      }
+      .header-button.on {
+        background: linear-gradient(180deg, #1f8f58, #187447);
+      }
+      .header-button.off {
+        background: #1a2342;
+        border: 1px solid #334269;
+      }
+      .header-button:disabled {
+        opacity: 0.72;
+        cursor: default;
+      }
       .input-with-actions {
         display: flex;
         gap: 10px;
@@ -310,7 +336,8 @@
             clear error details.
           </div>
         </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+        <div class="header-actions">
+          <button type="button" id="notificationsButton" class="header-button off">Enable notifications</button>
           <span id="runningBadge" class="badge">stopped</span>
           <span id="streamBadge" class="badge">stream idle</span>
         </div>
@@ -380,6 +407,53 @@
       const $ = (id) => document.getElementById(id);
       let stream = null;
       let defaultsApplied = false;
+      let notificationsEnabled = loadNotificationsPreference();
+      let notificationsPrimed = false;
+      let seenNotificationKeys = new Set();
+
+      function loadNotificationsPreference() {
+        try {
+          return window.localStorage.getItem("agenticFmWatchNotificationsEnabled") === "true";
+        } catch {
+          return false;
+        }
+      }
+
+      function saveNotificationsPreference(value) {
+        try {
+          window.localStorage.setItem("agenticFmWatchNotificationsEnabled", value ? "true" : "false");
+        } catch {}
+      }
+
+      function notificationsSupported() {
+        return typeof window.Notification !== "undefined";
+      }
+
+      function updateNotificationsButton() {
+        const button = $("notificationsButton");
+        if (!button) {
+          return;
+        }
+        if (!notificationsSupported()) {
+          button.textContent = "Notifications unavailable";
+          button.className = "header-button off";
+          button.disabled = true;
+          return;
+        }
+        button.disabled = false;
+        if (Notification.permission === "denied") {
+          button.textContent = "Notifications blocked";
+          button.className = "header-button off";
+          return;
+        }
+        if (Notification.permission === "granted" && notificationsEnabled) {
+          button.textContent = "Notifications on";
+          button.className = "header-button on";
+          return;
+        }
+        button.textContent = "Enable notifications";
+        button.className = "header-button off";
+      }
 
       function setStreamBadge(text, level = "") {
         $("streamBadge").textContent = text;
@@ -515,6 +589,135 @@
           return state.last_error.trim();
         }
         return "";
+      }
+
+      function getIssueEvents(state) {
+        if (!Array.isArray(state.recent_events)) {
+          return [];
+        }
+        return state.recent_events.filter(
+          (event) => event && event.event_type === "import_log_issue",
+        );
+      }
+
+      function buildNotificationKey(event) {
+        if (!event) {
+          return "";
+        }
+        return [
+          event.detected_at || event.timestamp || "",
+          event.rule || "",
+          event.code || "",
+          event.source || "",
+          event.script_name || "",
+          event.script_line || "",
+          event.message || "",
+        ].join("||");
+      }
+
+      function buildNotificationBody(error) {
+        const meta = [
+          formatTimestamp(error.timestamp || error.detected_at || ""),
+          error.script_line ? `line ${error.script_line}` : "",
+          error.label || "",
+          error.code ? `code ${error.code}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return [meta, String(error.message || "").trim()].filter(Boolean).join("\n");
+      }
+
+      function deliverNotification(title, body, tag) {
+        if (!notificationsSupported()) {
+          throw new Error("This browser does not support system notifications.");
+        }
+        if (Notification.permission !== "granted") {
+          throw new Error("Notification permission has not been granted.");
+        }
+        const notification = new Notification(title, {
+          body,
+          tag: tag || undefined,
+        });
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+        return notification;
+      }
+
+      function showImportErrorNotification(error) {
+        if (!notificationsSupported() || Notification.permission !== "granted") {
+          return;
+        }
+        const title = error.script_name
+          ? `Import error in ${error.script_name}`
+          : "Import error detected";
+        deliverNotification(title, buildNotificationBody(error), buildNotificationKey(error));
+      }
+
+      function showNotificationsEnabledPreview() {
+        if (!notificationsSupported() || Notification.permission !== "granted") {
+          return;
+        }
+        deliverNotification(
+          "Import notifications enabled",
+          "You will now receive alerts here for new import errors while this page stays open.",
+          "agentic-fm-watch-notifications-enabled",
+        );
+      }
+
+      function syncErrorNotifications(state) {
+        updateNotificationsButton();
+        const issueEvents = getIssueEvents(state);
+        const currentKeys = issueEvents
+          .map((event) => buildNotificationKey(event))
+          .filter(Boolean);
+        if (!notificationsPrimed) {
+          seenNotificationKeys = new Set(currentKeys);
+          notificationsPrimed = true;
+          return;
+        }
+        const newEvents = issueEvents.filter((event) => {
+          const key = buildNotificationKey(event);
+          return key && !seenNotificationKeys.has(key);
+        });
+        seenNotificationKeys = new Set(currentKeys);
+        if (!newEvents.length) {
+          return;
+        }
+        if (!notificationsEnabled || !notificationsSupported() || Notification.permission !== "granted") {
+          return;
+        }
+        const latestEvent = newEvents[newEvents.length - 1];
+        showImportErrorNotification(latestEvent);
+      }
+
+      async function toggleNotifications() {
+        if (!notificationsSupported()) {
+          alert("This browser does not support system notifications.");
+          return;
+        }
+        if (Notification.permission === "denied") {
+          alert("Notifications are blocked for this page. Enable them in your browser settings.");
+          updateNotificationsButton();
+          return;
+        }
+        if (Notification.permission === "granted") {
+          notificationsEnabled = !notificationsEnabled;
+          saveNotificationsPreference(notificationsEnabled);
+          updateNotificationsButton();
+          if (notificationsEnabled) {
+            showNotificationsEnabledPreview();
+          }
+          return;
+        }
+        const permission = await Notification.requestPermission();
+        notificationsEnabled = permission === "granted";
+        saveNotificationsPreference(notificationsEnabled);
+        updateNotificationsButton();
+        if (notificationsEnabled) {
+          showNotificationsEnabledPreview();
+        }
       }
 
       function renderStatus(state) {
@@ -656,6 +859,7 @@
         renderStatus(state);
         renderStats(state.summary || {});
         renderImports(state.summary || {});
+        syncErrorNotifications(state);
       }
 
       async function refresh() {
@@ -749,7 +953,11 @@
       $("browseDocumentsDirButton").addEventListener("click", () =>
         browseDocumentsDir().catch((error) => alert(error.message)),
       );
+      $("notificationsButton").addEventListener("click", () =>
+        toggleNotifications().catch((error) => alert(error.message)),
+      );
 
+      updateNotificationsButton();
       refresh().then((state) => {
         if (state?.running) {
           connectStream();
