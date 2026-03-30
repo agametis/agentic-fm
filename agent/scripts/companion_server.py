@@ -1164,8 +1164,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self._handle_trigger()
         elif path == "/pending":
             self._handle_pending_post()
-        elif path == "/watch/start":
-            self._handle_watch_start()
         elif path == "/watch/import-log/start":
             self._handle_watch_import_log_start()
         elif path == "/watch/pick-path":
@@ -1224,54 +1222,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
     def _handle_watch_ui(self):
         self._send_html(_build_watch_ui_html())
-
-    def _handle_watch_start(self):
-        try:
-            body = self._read_body()
-            payload = json.loads(body) if body else {}
-        except (ValueError, OSError) as exc:
-            self._send_json(
-                {"success": False, "exit_code": -1, "error": f"Invalid request: {exc}"},
-                status=400,
-            )
-            return
-
-        path = payload.get("path", "")
-        if not path:
-            self._send_json({"success": False, "exit_code": -1, "error": "Missing required field: path"}, status=400)
-            return
-
-        try:
-            poll_interval = float(payload.get("poll_interval", FILE_WATCH_POLL_INTERVAL_SECONDS))
-        except (TypeError, ValueError):
-            self._send_json({"success": False, "exit_code": -1, "error": "poll_interval must be a number"}, status=400)
-            return
-
-        if poll_interval <= 0:
-            self._send_json({"success": False, "exit_code": -1, "error": "poll_interval must be greater than 0"}, status=400)
-            return
-
-        start_at_end = bool(payload.get("start_at_end", True))
-
-        try:
-            analyzer_config = _normalize_analyzer_config(payload.get("analyzer"))
-            state = _start_file_watch(path, poll_interval, start_at_end, analyzer_config)
-        except ValueError as exc:
-            self._send_json({"success": False, "exit_code": -1, "error": str(exc)}, status=400)
-            return
-        except Exception as exc:
-            log.exception("Failed to start file watch: %s", exc)
-            self._send_json({"success": False, "exit_code": -1, "error": str(exc)}, status=500)
-            return
-
-        log.info(
-            "File watch started: path=%s analyzer=%s poll_interval=%ss start_at_end=%s",
-            state["path"],
-            state["analyzer"]["type"],
-            state["poll_interval"],
-            state["start_at_end"],
-        )
-        self._send_json({"success": True, "watch": state})
 
     def _handle_watch_import_log_start(self):
         try:
@@ -1932,7 +1882,7 @@ def main():
     log.info("companion_server v%s listening on %s:%d", VERSION, BIND_HOST, actual_port)
     log.info("Watch UI: %s", watch_ui_url)
     threading.Thread(target=_check_for_updates, daemon=True).start()
-    log.info("Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/pick-path  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push")
+    log.info("Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/import-log/start  POST /watch/pick-path  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push")
     log.info("Press Ctrl-C to stop.")
 
     try:

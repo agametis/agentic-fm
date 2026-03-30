@@ -72,7 +72,8 @@ Startup log output now looks more like this:
 
 ```txt
 2026-03-29T19:10:00 INFO companion_server v1.0 listening on 127.0.0.1:8765
-2026-03-29T19:10:00 INFO Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/pick-path  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push
+2026-03-29T19:10:00 INFO Watch UI: http://127.0.0.1:8765/watch/ui
+2026-03-29T19:10:00 INFO Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/import-log/start  POST /watch/pick-path  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push
 2026-03-29T19:10:00 INFO Press Ctrl-C to stop.
 ```
 
@@ -170,7 +171,6 @@ launchctl unload ~/Library/LaunchAgents/com.agentic-fm.companion-server.plist
 | `GET`  | `/watch/results`          | Curated watch results payload                              |
 | `GET`  | `/watch/stream`           | SSE stream of live watch updates                           |
 | `GET`  | `/watch/ui`               | Built-in HTML UI for watch control and grouped import view |
-| `POST` | `/watch/start`            | Start watching an arbitrary local file                     |
 | `POST` | `/watch/import-log/start` | Start watching `Import.log` with automatic path resolution |
 | `POST` | `/watch/pick-path`        | Open a native file or folder picker on the host machine    |
 | `POST` | `/watch/stop`             | Stop current watch                                         |
@@ -531,14 +531,10 @@ The page provides:
 
 - **Auto Import.log Watch**
   - choose server or local mode
-  - choose analyzer
+  - set poll interval
   - provide database path or documents directory
   - browse for local files or folders using a native picker
   - auto-fill the host machine's default Documents directory
-
-- **Custom File Watch**
-  - watch any file path
-  - browse for the file using a native picker
 
 - **Live status**
   - current path
@@ -558,98 +554,9 @@ The page uses:
 
 - **`GET /watch/results`** for refresh
 - **`GET /watch/stream`** for live updates
-- **`POST /watch/start`** and **`POST /watch/import-log/start`** to begin watching
+- **`POST /watch/import-log/start`** to begin watching
 - **`POST /watch/pick-path`** to open host-native file/folder chooser dialogs
 - **`POST /watch/stop`** to stop watching
-
----
-
-### POST /watch/start
-
-Starts watching an arbitrary local file.
-
-The server uses a polling loop with standard library file reads. It tracks appended content and analyzes complete new lines.
-
-**Request body:**
-
-| Field           | Type             | Required | Description                                                                                |
-| --------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `path`          | string           | Yes      | File path to monitor. `~` expansion is supported.                                          |
-| `poll_interval` | number           | No       | Poll interval in seconds. Default `0.5`. Must be `> 0`.                                    |
-| `start_at_end`  | boolean          | No       | If `true`, attach at end of existing file so only new content is analyzed. Default `true`. |
-| `analyzer`      | string or object | No       | Analyzer configuration. Default `import_log`.                                              |
-
-**Built-in analyzers:**
-
-- **`import_log`**
-  - tracks FileMaker import lifecycle lines
-  - reports all non-zero import log entries as issues
-
-- **`import_log_unknown_attributes`**
-  - narrower version for invalid attribute values only
-
-- **`regex`**
-  - custom rules defined by caller
-
-**Regex analyzer request example:**
-
-```json
-{
-  "path": "/tmp/app.log",
-  "poll_interval": 0.5,
-  "start_at_end": true,
-  "analyzer": {
-    "type": "regex",
-    "rules": [
-      {
-        "name": "error_line",
-        "pattern": "ERROR",
-        "severity": "error"
-      },
-      {
-        "name": "unknown_param",
-        "pattern": "unknown parameter",
-        "flags": "i",
-        "severity": "error"
-      }
-    ]
-  }
-}
-```
-
-**Import.log request example:**
-
-```json
-{
-  "path": "/Users/yourname/Documents/Import.log",
-  "poll_interval": 0.5,
-  "start_at_end": true,
-  "analyzer": "import_log"
-}
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "watch": {
-    "running": true,
-    "path": "/Users/yourname/Documents/Import.log",
-    "poll_interval": 0.5,
-    "start_at_end": true,
-    "analyzer": {
-      "type": "import_log"
-    }
-  }
-}
-```
-
-Notes:
-
-- starting a new watch stops any previous watch first
-- file truncation and recreation are handled
-- partial lines are buffered until newline arrives
 
 ---
 

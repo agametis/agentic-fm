@@ -526,7 +526,6 @@
         $("statusGrid").innerHTML = [
           ["Path", state.path || ""],
           ["File exists", String(Boolean(state.file_exists))],
-          ["Analyzer", state.analyzer?.type || ""],
           ["Poll interval", String(state.poll_interval ?? "")],
           ["Started at", formatTimestamp(state.started_at)],
           ["Last change", formatTimestamp(state.last_change_at)],
@@ -697,7 +696,6 @@
           database_path: $("databasePath").value.trim(),
           documents_dir: $("documentsDir").value.trim(),
           poll_interval: Number($("importPollInterval").value || "0.5"),
-          analyzer: "import_log",
           start_at_end: true,
         };
         await request("/watch/import-log/start", "POST", payload);
