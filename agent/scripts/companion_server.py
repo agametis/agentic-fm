@@ -730,6 +730,9 @@ def _process_import_log_line(line: str, analyzer_type: str) -> list[dict]:
                         if completed_import
                         else "Import completed."
                     ),
+                    source=completed_import.get("source", source),
+                    database_name=completed_import.get("database_name", source),
+                    script_name=completed_import.get("script_name", ""),
                     import_status=completed_import.get("status", "unknown"),
                     imported_steps=completed_import.get("imported_steps"),
                     error_count=int(completed_import.get("error_count", 0)),

@@ -591,12 +591,17 @@
         return "";
       }
 
-      function getIssueEvents(state) {
+      function getCompletedImportErrorEvents(state) {
         if (!Array.isArray(state.recent_events)) {
           return [];
         }
         return state.recent_events.filter(
-          (event) => event && event.event_type === "import_log_issue",
+          (event) =>
+            event &&
+            event.event_type === "import_log_lifecycle" &&
+            event.rule === "import_completed" &&
+            event.import_status === "with_errors" &&
+            Number(event.error_count || 0) > 0,
         );
       }
 
@@ -615,16 +620,31 @@
         ].join("||");
       }
 
-      function buildNotificationBody(error) {
-        const meta = [
-          formatTimestamp(error.timestamp || error.detected_at || ""),
-          error.script_line ? `line ${error.script_line}` : "",
-          error.label || "",
-          error.code ? `code ${error.code}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        return [meta, String(error.message || "").trim()].filter(Boolean).join("\n");
+      function buildNotificationSolutionName(event) {
+        const rawSource = String(event.source || event.database_name || "").trim();
+        if (!rawSource) {
+          return "Unknown solution";
+        }
+        const pathBits = rawSource.split(/[/\\]/);
+        const lastBit = pathBits[pathBits.length - 1] || rawSource;
+        return lastBit || "Unknown solution";
+      }
+
+      function buildNotificationHeadline(event) {
+        const solutionName = buildNotificationSolutionName(event);
+        const scriptName = String(event.script_name || "").trim();
+        if (scriptName) {
+          return `${scriptName} (${solutionName})`;
+        }
+        return solutionName;
+      }
+
+      function buildNotificationBody(event) {
+        const headline = buildNotificationHeadline(event);
+        const timestampText = formatTimestamp(event.timestamp || event.detected_at || "");
+        const errorCount = Number(event.error_count || 0);
+        const errorText = `${errorCount} error${errorCount === 1 ? "" : "s"}`;
+        return [headline, timestampText, errorText].join("\n");
       }
 
       function deliverNotification(title, body, tag) {
@@ -645,14 +665,15 @@
         return notification;
       }
 
-      function showImportErrorNotification(error) {
+      function showImportErrorNotification(event) {
         if (!notificationsSupported() || Notification.permission !== "granted") {
           return;
         }
-        const title = error.script_name
-          ? `Import error in ${error.script_name}`
-          : "Import error detected";
-        deliverNotification(title, buildNotificationBody(error), buildNotificationKey(error));
+        deliverNotification(
+          "Import completed with errors",
+          buildNotificationBody(event),
+          buildNotificationKey(event),
+        );
       }
 
       function showNotificationsEnabledPreview() {
@@ -668,8 +689,8 @@
 
       function syncErrorNotifications(state) {
         updateNotificationsButton();
-        const issueEvents = getIssueEvents(state);
-        const currentKeys = issueEvents
+        const completedErrorEvents = getCompletedImportErrorEvents(state);
+        const currentKeys = completedErrorEvents
           .map((event) => buildNotificationKey(event))
           .filter(Boolean);
         if (!notificationsPrimed) {
@@ -677,7 +698,7 @@
           notificationsPrimed = true;
           return;
         }
-        const newEvents = issueEvents.filter((event) => {
+        const newEvents = completedErrorEvents.filter((event) => {
           const key = buildNotificationKey(event);
           return key && !seenNotificationKeys.has(key);
         });
