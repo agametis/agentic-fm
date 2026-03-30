@@ -357,7 +357,7 @@
             </div>
           </div>
           <div class="button-row">
-            <button type="button" id="startImportButton">Start Import.log watch</button>
+            <button type="button" id="startImportButton">Start watch</button>
             <button type="button" id="stopButton" class="danger">Stop watch</button>
             <button type="button" id="refreshButton" class="secondary">Refresh</button>
           </div>
@@ -457,19 +457,84 @@
         return source && source !== displayScriptName(importItem) ? source : "";
       }
 
+      function normalizeTimestamp(value) {
+        const raw = String(value ?? "").trim();
+        if (!raw) {
+          return null;
+        }
+        if (raw.includes("T")) {
+          const parsed = new Date(raw);
+          return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+        const match = raw.match(
+          /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?:\.(\d+))? ([+-]\d{2})(\d{2})$/,
+        );
+        if (match) {
+          const [, datePart, timePart, fraction = "", tzHour, tzMinute] = match;
+          const isoLike = `${datePart}T${timePart}${fraction ? `.${fraction}` : ""}${tzHour}:${tzMinute}`;
+          const parsed = new Date(isoLike);
+          return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+        return null;
+      }
+
+      function formatTimestamp(value) {
+        const raw = String(value ?? "").trim();
+        if (!raw) {
+          return "";
+        }
+        const parsed = normalizeTimestamp(raw);
+        if (!parsed) {
+          return raw;
+        }
+        return new Intl.DateTimeFormat(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(parsed);
+      }
+
+      function formatStatusLastError(state) {
+        const summaryError = state.summary?.last_error;
+        if (summaryError && typeof summaryError === "object") {
+          const timestampText = formatTimestamp(
+            summaryError.timestamp || summaryError.detected_at || "",
+          );
+          const bits = [
+            timestampText,
+            summaryError.script_name || "",
+            summaryError.script_line ? `line ${summaryError.script_line}` : "",
+            summaryError.label || "",
+            summaryError.code ? `code ${summaryError.code}` : "",
+          ].filter(Boolean);
+          const prefix = bits.join(" · ");
+          const message = String(summaryError.message || "").trim();
+          if (prefix && message) {
+            return `${prefix}: ${message}`;
+          }
+          if (message) {
+            return message;
+          }
+        }
+        if (typeof state.last_error === "string") {
+          return state.last_error.trim();
+        }
+        return "";
+      }
+
       function renderStatus(state) {
         const running = Boolean(state.running);
         $("runningBadge").textContent = running ? "running" : "stopped";
         $("runningBadge").className = `badge ${running ? "ok" : "warn"}`;
+        const lastErrorText = formatStatusLastError(state);
         $("statusGrid").innerHTML = [
           ["Path", state.path || ""],
           ["File exists", String(Boolean(state.file_exists))],
           ["Analyzer", state.analyzer?.type || ""],
           ["Poll interval", String(state.poll_interval ?? "")],
-          ["Started at", state.started_at || ""],
-          ["Last change", state.last_change_at || ""],
-          ["Last event", state.last_event_at || ""],
-          ["Last error", state.last_error || ""],
+          ["Started at", formatTimestamp(state.started_at)],
+          ["Last change", formatTimestamp(state.last_change_at)],
+          ["Last event", formatTimestamp(state.last_event_at)],
+          ["Last error", lastErrorText],
           ["Revision", String(state.revision ?? "")],
         ]
           .map(
@@ -542,8 +607,8 @@
         const source = displayImportSource(importItem);
         const subtitleBits = [
           source,
-          importItem.started_at ? `started ${importItem.started_at}` : "",
-          importItem.completed_at ? `completed ${importItem.completed_at}` : "",
+          importItem.started_at ? `started ${formatTimestamp(importItem.started_at)}` : "",
+          importItem.completed_at ? `completed ${formatTimestamp(importItem.completed_at)}` : "",
         ]
           .filter(Boolean)
           .join(" · ");
@@ -556,7 +621,7 @@
             <div class="import-head-left">
               <div class="import-title">
                 <h3>${escapeHtml(displayScriptName(importItem))}</h3>
-                <span class="badge ${statusClass === "warn" ? "warn" : statusClass === "running" ? "info" : "ok"}">${escapeHtml(statusText)}</span>
+                <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
                 ${isCurrent ? '<span class="badge info">current</span>' : ""}
               </div>
               <div class="import-subtitle">${escapeHtml(subtitleBits || "No source metadata")}</div>

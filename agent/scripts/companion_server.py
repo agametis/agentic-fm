@@ -1911,15 +1911,28 @@ def parse_args():
     return parser.parse_args()
 
 
+def _format_local_url(host: str, port: int, path: str = "") -> str:
+    display_host = (host or "127.0.0.1").strip()
+    if display_host in {"0.0.0.0", "::", ""}:
+        display_host = "127.0.0.1"
+    if ":" in display_host and not display_host.startswith("["):
+        display_host = f"[{display_host}]"
+    normalized_path = path if path.startswith("/") or not path else f"/{path}"
+    return f"http://{display_host}:{port}{normalized_path}"
+
+
 def main():
     args = parse_args()
-    port = args.port
+    requested_port = args.port
 
-    server = ThreadingHTTPServer((BIND_HOST, port), CompanionHandler)
+    server = ThreadingHTTPServer((BIND_HOST, requested_port), CompanionHandler)
+    actual_port = int(server.server_address[1])
+    watch_ui_url = _format_local_url(BIND_HOST, actual_port, "/watch/ui")
 
-    log.info("companion_server v%s listening on %s:%d", VERSION, BIND_HOST, port)
+    log.info("companion_server v%s listening on %s:%d", VERSION, BIND_HOST, actual_port)
+    log.info("Watch UI: %s", watch_ui_url)
     threading.Thread(target=_check_for_updates, daemon=True).start()
-    log.info("Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push")
+    log.info("Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/pick-path  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push")
     log.info("Press Ctrl-C to stop.")
 
     try:
