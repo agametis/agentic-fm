@@ -335,12 +335,11 @@
           <div class="row single">
             <div>
               <label for="databasePath"
-                >Database path or folder for local file mode</label
+                >Database folder for local file mode</label
               >
               <div class="input-with-actions">
-                <input id="databasePath" placeholder="/path/to/MyFile.fmp12" />
-                <button type="button" id="browseDatabaseFileButton" class="secondary">File…</button>
-                <button type="button" id="browseDatabaseFolderButton" class="secondary">Folder…</button>
+                <input id="databasePath" placeholder="/path/to/database/folder" />
+                <button type="button" id="browseDatabaseFolderButton" class="secondary">Browse...</button>
               </div>
             </div>
           </div>
@@ -349,7 +348,7 @@
               <label for="documentsDir">Documents dir for server mode</label>
               <div class="input-with-actions">
                 <input id="documentsDir" placeholder="Documents folder" />
-                <button type="button" id="browseDocumentsDirButton" class="secondary">Browse…</button>
+                <button type="button" id="browseDocumentsDirButton" class="secondary">Browse...</button>
               </div>
             </div>
           </div>
@@ -713,17 +712,6 @@
         await refresh();
       }
 
-      async function browseDatabaseFile() {
-        const selectedPath = await pickPath(
-          "file",
-          $("databasePath").value.trim(),
-          "Select FileMaker file or Import.log file",
-        );
-        if (selectedPath) {
-          $("databasePath").value = selectedPath;
-        }
-      }
-
       async function browseDatabaseFolder() {
         const selectedPath = await pickPath(
           "directory",
@@ -754,9 +742,6 @@
       );
       $("refreshButton").addEventListener("click", () =>
         refresh().catch((error) => alert(error.message)),
-      );
-      $("browseDatabaseFileButton").addEventListener("click", () =>
-        browseDatabaseFile().catch((error) => alert(error.message)),
       );
       $("browseDatabaseFolderButton").addEventListener("click", () =>
         browseDatabaseFolder().catch((error) => alert(error.message)),

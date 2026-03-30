@@ -533,7 +533,7 @@ The page provides:
   - choose server or local mode
   - set poll interval
   - provide database path or documents directory
-  - browse for local files or folders using a native picker
+  - browse for the local database folder using a native picker
   - auto-fill the host machine's default Documents directory
 
 - **Live status**
@@ -574,7 +574,7 @@ This is the recommended endpoint for clipboard-import monitoring.
 | `mode`            | string           | No       | Alias for `location`.                                                            |
 | `import_log_path` | string           | No       | Explicit full path override. If provided, wins over all inference.               |
 | `documents_dir`   | string           | No       | Directory used for `server` mode. Default is the host OS Documents folder.       |
-| `database_path`   | string           | No       | Path to a local `.fmp12` file or local database directory.                       |
+| `database_path`   | string           | No       | Path to a local database directory. The built-in UI fills this with a folder.    |
 | `database_dir`    | string           | No       | Explicit local directory containing `Import.log`.                                |
 | `poll_interval`   | number           | No       | Poll interval in seconds. Default `0.5`.                                         |
 | `start_at_end`    | boolean          | No       | Default `true`.                                                                  |
@@ -609,7 +609,7 @@ This is the recommended endpoint for clipboard-import monitoring.
 ```json
 {
   "location": "local",
-  "database_path": "/Users/yourname/Projects/MySolution/MySolution.fmp12",
+  "database_path": "/Users/yourname/Projects/MySolution",
   "analyzer": "import_log"
 }
 ```
