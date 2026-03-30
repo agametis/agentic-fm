@@ -62,6 +62,19 @@
       .row.single {
         grid-template-columns: 1fr;
       }
+      .input-with-actions {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+      }
+      .input-with-actions input {
+        flex: 1 1 auto;
+      }
+      .input-with-actions button {
+        width: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
       label {
         display: block;
         font-size: 12px;
@@ -323,13 +336,20 @@
               <label for="databasePath"
                 >Database path or folder for local file mode</label
               >
-              <input id="databasePath" placeholder="/path/to/MyFile.fmp12" />
+              <div class="input-with-actions">
+                <input id="databasePath" placeholder="/path/to/MyFile.fmp12" />
+                <button type="button" id="browseDatabaseFileButton" class="secondary">File…</button>
+                <button type="button" id="browseDatabaseFolderButton" class="secondary">Folder…</button>
+              </div>
             </div>
           </div>
           <div class="row">
             <div>
               <label for="documentsDir">Documents dir for server mode</label>
-              <input id="documentsDir" value="~/Documents" />
+              <div class="input-with-actions">
+                <input id="documentsDir" placeholder="Documents folder" />
+                <button type="button" id="browseDocumentsDirButton" class="secondary">Browse…</button>
+              </div>
             </div>
             <div>
               <label for="importPollInterval">Poll interval</label>
@@ -337,50 +357,13 @@
             </div>
           </div>
           <div class="button-row">
-            <button id="startImportButton">Start Import.log watch</button>
+            <button type="button" id="startImportButton">Start Import.log watch</button>
+            <button type="button" id="stopButton" class="danger">Stop watch</button>
+            <button type="button" id="refreshButton" class="secondary">Refresh</button>
           </div>
         </section>
 
         <section class="panel">
-          <h2>Custom File Watch</h2>
-          <div class="row single">
-            <div>
-              <label for="customPath">File path</label>
-              <input id="customPath" placeholder="/path/to/file.log" />
-            </div>
-          </div>
-          <div class="row">
-            <div>
-              <label for="customAnalyzer">Analyzer</label>
-              <select id="customAnalyzer">
-                <option value="import_log">Import.log issues</option>
-                <option value="import_log_unknown_attributes">
-                  Import.log unknown attributes
-                </option>
-              </select>
-            </div>
-            <div>
-              <label for="customPollInterval">Poll interval</label>
-              <input id="customPollInterval" value="0.5" />
-            </div>
-          </div>
-          <div class="row single">
-            <div>
-              <label for="startAtEnd">Start at end of file</label>
-              <select id="startAtEnd">
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            </div>
-          </div>
-          <div class="button-row">
-            <button id="startCustomButton">Start custom watch</button>
-            <button id="stopButton" class="danger">Stop watch</button>
-            <button id="refreshButton" class="secondary">Refresh</button>
-          </div>
-        </section>
-
-        <section class="panel full">
           <h2>Status</h2>
           <div id="statusGrid" class="status-grid"></div>
         </section>
@@ -400,6 +383,12 @@
     <script>
       const $ = (id) => document.getElementById(id);
       let stream = null;
+      let defaultsApplied = false;
+
+      function setStreamBadge(text, level = "") {
+        $("streamBadge").textContent = text;
+        $("streamBadge").className = `badge${level ? ` ${level}` : ""}`;
+      }
 
       function escapeHtml(value) {
         return String(value ?? "")
@@ -416,11 +405,42 @@
           body: body ? JSON.stringify(body) : null,
         });
         const text = await response.text();
-        const data = text ? JSON.parse(text) : {};
+        const contentType = response.headers.get("Content-Type") || "";
+        let data = {};
+        if (text) {
+          if (contentType.includes("application/json")) {
+            data = JSON.parse(text);
+          } else {
+            const summary = text.startsWith("<!DOCTYPE")
+              ? `Expected JSON from ${path}, got HTML instead.`
+              : text.slice(0, 200);
+            throw new Error(summary);
+          }
+        }
         if (!response.ok) {
           throw new Error(data.error || `HTTP ${response.status}`);
         }
         return data;
+      }
+
+      async function pickPath(selectionType, initialPath, title) {
+        const result = await request("/watch/pick-path", "POST", {
+          selection_type: selectionType,
+          initial_path: initialPath || "",
+          title: title || "",
+        });
+        return result.cancelled ? "" : (result.selected_path || "");
+      }
+
+      function applyDefaults(state) {
+        if (defaultsApplied) {
+          return;
+        }
+        const documentsDir = state.defaults?.documents_dir || "";
+        if (documentsDir && !$("documentsDir").value.trim()) {
+          $("documentsDir").value = documentsDir;
+        }
+        defaultsApplied = true;
       }
 
       function displayScriptName(importItem) {
@@ -510,7 +530,7 @@
           status === "with_errors"
             ? "warn"
             : status === "running"
-              ? "running"
+              ? "info"
               : "ok";
         const statusText =
           status === "with_errors"
@@ -572,6 +592,7 @@
       }
 
       function render(state) {
+        applyDefaults(state);
         renderStatus(state);
         renderStats(state.summary || {});
         renderImports(state.summary || {});
@@ -581,9 +602,15 @@
         try {
           const state = await request("/watch/results");
           render(state);
+          if (!state.running && stream) {
+            stream.close();
+            stream = null;
+            setStreamBadge("stream idle");
+          }
+          return state;
         } catch (error) {
-          $("streamBadge").textContent = error.message;
-          $("streamBadge").className = "badge err";
+          setStreamBadge(error.message, "err");
+          throw error;
         }
       }
 
@@ -592,16 +619,13 @@
           stream.close();
         }
         stream = new EventSource("/watch/stream");
-        $("streamBadge").textContent = "connecting";
-        $("streamBadge").className = "badge warn";
+        setStreamBadge("connecting", "warn");
         stream.addEventListener("results", (event) => {
-          $("streamBadge").textContent = "live";
-          $("streamBadge").className = "badge ok";
+          setStreamBadge("live", "ok");
           render(JSON.parse(event.data));
         });
         stream.onerror = () => {
-          $("streamBadge").textContent = "reconnecting";
-          $("streamBadge").className = "badge warn";
+          setStreamBadge("reconnecting", "warn");
         };
       }
 
@@ -619,28 +643,51 @@
         connectStream();
       }
 
-      async function startCustomWatch() {
-        const payload = {
-          path: $("customPath").value.trim(),
-          poll_interval: Number($("customPollInterval").value || "0.5"),
-          start_at_end: $("startAtEnd").value === "true",
-          analyzer: $("customAnalyzer").value,
-        };
-        await request("/watch/start", "POST", payload);
+      async function stopWatch() {
+        if (stream) {
+          stream.close();
+          stream = null;
+        }
+        setStreamBadge("stream idle");
+        await request("/watch/stop", "POST");
         await refresh();
-        connectStream();
       }
 
-      async function stopWatch() {
-        await request("/watch/stop", "POST", {});
-        await refresh();
+      async function browseDatabaseFile() {
+        const selectedPath = await pickPath(
+          "file",
+          $("databasePath").value.trim(),
+          "Select FileMaker file or Import.log file",
+        );
+        if (selectedPath) {
+          $("databasePath").value = selectedPath;
+        }
+      }
+
+      async function browseDatabaseFolder() {
+        const selectedPath = await pickPath(
+          "directory",
+          $("databasePath").value.trim() || $("documentsDir").value.trim(),
+          "Select database folder",
+        );
+        if (selectedPath) {
+          $("databasePath").value = selectedPath;
+        }
+      }
+
+      async function browseDocumentsDir() {
+        const selectedPath = await pickPath(
+          "directory",
+          $("documentsDir").value.trim(),
+          "Select Documents folder",
+        );
+        if (selectedPath) {
+          $("documentsDir").value = selectedPath;
+        }
       }
 
       $("startImportButton").addEventListener("click", () =>
         startImportWatch().catch((error) => alert(error.message)),
-      );
-      $("startCustomButton").addEventListener("click", () =>
-        startCustomWatch().catch((error) => alert(error.message)),
       );
       $("stopButton").addEventListener("click", () =>
         stopWatch().catch((error) => alert(error.message)),
@@ -648,9 +695,23 @@
       $("refreshButton").addEventListener("click", () =>
         refresh().catch((error) => alert(error.message)),
       );
+      $("browseDatabaseFileButton").addEventListener("click", () =>
+        browseDatabaseFile().catch((error) => alert(error.message)),
+      );
+      $("browseDatabaseFolderButton").addEventListener("click", () =>
+        browseDatabaseFolder().catch((error) => alert(error.message)),
+      );
+      $("browseDocumentsDirButton").addEventListener("click", () =>
+        browseDocumentsDir().catch((error) => alert(error.message)),
+      );
 
-      connectStream();
-      refresh();
+      refresh().then((state) => {
+        if (state?.running) {
+          connectStream();
+        } else {
+          setStreamBadge("stream idle");
+        }
+      }).catch(() => {});
       setInterval(() => refresh().catch(() => {}), 5000);
     </script>
   </body>

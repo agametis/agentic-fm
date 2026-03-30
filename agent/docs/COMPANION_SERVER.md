@@ -19,7 +19,7 @@ It currently provides 4 broad categories of functionality:
   - Analyzes appended content.
   - Exposes results by JSON, SSE stream, terminal log output, and a built-in UI.
 
-This is especially useful for monitoring FileMaker's `Import.log` after importing script steps from the clipboard. If AI-generated script steps contain unknown attributes or invalid values, the server can now detect that automatically and surface it immediately.
+This is especially useful for monitoring FileMaker's `Import.log` after importing script steps from the clipboard. The watch subsystem now surfaces full import lifecycle events, grouped import sessions, and all non-zero import errors — not only unknown attribute values.
 
 ## Why this exists
 
@@ -72,7 +72,7 @@ Startup log output now looks more like this:
 
 ```txt
 2026-03-29T19:10:00 INFO companion_server v1.0 listening on 127.0.0.1:8765
-2026-03-29T19:10:00 INFO Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push
+2026-03-29T19:10:00 INFO Endpoints: GET /health  GET /pending  GET /watch/status  GET /watch/results  GET /watch/stream  GET /watch/ui  GET /webviewer/status  POST /explode  POST /context  POST /clipboard  POST /trigger  POST /debug  POST /pending  POST /watch/start  POST /watch/import-log/start  POST /watch/pick-path  POST /watch/stop  POST /webviewer/start  POST /webviewer/stop  POST /webviewer/push
 2026-03-29T19:10:00 INFO Press Ctrl-C to stop.
 ```
 
@@ -169,9 +169,10 @@ launchctl unload ~/Library/LaunchAgents/com.agentic-fm.companion-server.plist
 | `GET`  | `/watch/status`           | Full internal watch state snapshot                         |
 | `GET`  | `/watch/results`          | Curated watch results payload                              |
 | `GET`  | `/watch/stream`           | SSE stream of live watch updates                           |
-| `GET`  | `/watch/ui`               | Built-in HTML UI for watch control and results             |
+| `GET`  | `/watch/ui`               | Built-in HTML UI for watch control and grouped import view |
 | `POST` | `/watch/start`            | Start watching an arbitrary local file                     |
 | `POST` | `/watch/import-log/start` | Start watching `Import.log` with automatic path resolution |
+| `POST` | `/watch/pick-path`        | Open a native file or folder picker on the host machine    |
 | `POST` | `/watch/stop`             | Stop current watch                                         |
 
 ### FileMaker workflow bridge
@@ -226,6 +227,39 @@ No request body. No required headers.
 
 ---
 
+### POST /watch/pick-path
+
+Opens a native file or folder chooser on the host machine running the Companion Server.
+
+This is intended for the built-in Watch UI so local paths can be selected without manually typing them.
+
+**Request body:**
+
+| Field            | Type   | Required | Description                                        |
+| ---------------- | ------ | -------- | -------------------------------------------------- |
+| `selection_type` | string | No       | `file` or `directory`. Default `file`.             |
+| `initial_path`   | string | No       | Initial file or folder hint for the picker dialog. |
+| `title`          | string | No       | Custom dialog title.                               |
+
+**Response example:**
+
+```json
+{
+  "success": true,
+  "selected_path": "/Users/yourname/Documents/Import.log",
+  "cancelled": false
+}
+```
+
+Notes:
+
+- tries `tkinter` first if available
+- on macOS, falls back to native `osascript` dialogs
+- on Windows, falls back to PowerShell dialogs
+- if the dialog is cancelled, `selected_path` is empty and `cancelled` is `true`
+
+---
+
 ### GET /watch/status
 
 Returns the full current watch state snapshot.
@@ -268,29 +302,83 @@ This is the most complete raw status endpoint. It exposes internal tracking fiel
   "file_exists": true,
   "revision": 7,
   "analyzer": {
-    "type": "import_log_unknown_attributes"
+    "type": "import_log"
   },
   "summary": {
-    "events_total": 3,
-    "errors_total": 3,
+    "events_total": 5,
+    "errors_total": 2,
     "matches_by_rule": {
-      "unknown_attribute": 3
+      "import_started": 1,
+      "missing_function": 1,
+      "missing_field": 1,
+      "import_steps_imported": 1,
+      "import_completed": 1
+    },
+    "errors_by_code": {
+      "102": 1,
+      "1208": 1
     },
     "current_import": {},
     "last_completed_import": {
       "source": "FileName.fmp12",
+      "database_name": "FileName.fmp12",
+      "script_name": "ScriptName",
       "started_at": "2026-03-27 16:21:28.370 +0100",
-      "error_count": 3,
+      "error_count": 2,
       "imported_steps": 260,
-      "completed_at": "2026-03-27 16:21:28.420 +0100"
+      "completed_at": "2026-03-27 16:21:28.420 +0100",
+      "status": "with_errors",
+      "errors": [
+        {
+          "line_number": "31",
+          "step_name": "Set Variable",
+          "label": "Missing function",
+          "code": "1208",
+          "message": "Function referred to in the calculation “cf_Param_Get ( \"Prozess\" )” is missing."
+        },
+        {
+          "line_number": "42",
+          "step_name": "Set Field",
+          "label": "Missing field",
+          "code": "102",
+          "message": "Field “FertigungFreigabeStatus” missing."
+        }
+      ]
     },
+    "recent_imports": [
+      {
+        "script_name": "ScriptName",
+        "imported_steps": 260,
+        "status": "with_errors"
+      }
+    ],
+    "imports_total": 12,
+    "imports_with_errors": 2,
+    "imports_without_errors": 10,
     "last_error": {
-      "rule": "unknown_attribute",
-      "message": "Attribute value “ExitAfterLast” unknown."
+      "rule": "missing_field",
+      "message": "Field “FertigungFreigabeStatus” missing."
     }
   },
-  "recent_events": [],
-  "last_error": ""
+  "recent_events": [
+    {
+      "event_type": "import_log_lifecycle",
+      "rule": "import_completed",
+      "severity": "warn",
+      "import_status": "with_errors",
+      "imported_steps": 260,
+      "error_count": 2,
+      "message": "Import completed with 2 errors."
+    }
+  ],
+  "last_error": "",
+  "platform": {
+    "system": "Darwin",
+    "python_platform": "darwin"
+  },
+  "defaults": {
+    "documents_dir": "/Users/yourname/Documents"
+  }
 }
 ```
 
@@ -314,43 +402,78 @@ Compared with `/watch/status`, this omits some lower-level internal fields and f
   "file_exists": true,
   "revision": 7,
   "analyzer": {
-    "type": "import_log_unknown_attributes"
+    "type": "import_log"
   },
   "summary": {
-    "events_total": 3,
-    "errors_total": 3,
+    "events_total": 5,
+    "errors_total": 2,
     "matches_by_rule": {
-      "unknown_attribute": 3
+      "import_started": 1,
+      "missing_function": 1,
+      "missing_field": 1,
+      "import_steps_imported": 1,
+      "import_completed": 1
+    },
+    "errors_by_code": {
+      "102": 1,
+      "1208": 1
     },
     "current_import": {},
     "last_completed_import": {
       "source": "FileName.fmp12",
+      "database_name": "FileName.fmp12",
+      "script_name": "ScriptName",
       "started_at": "2026-03-27 16:21:28.370 +0100",
-      "error_count": 3,
+      "error_count": 2,
       "imported_steps": 260,
-      "completed_at": "2026-03-27 16:21:28.420 +0100"
+      "completed_at": "2026-03-27 16:21:28.420 +0100",
+      "status": "with_errors",
+      "errors": [
+        {
+          "line_number": "31",
+          "step_name": "Set Variable",
+          "label": "Missing function",
+          "code": "1208",
+          "message": "Function referred to in the calculation “cf_Param_Get ( \"Prozess\" )” is missing."
+        }
+      ]
+    },
+    "recent_imports": [
+      {
+        "script_name": "ScriptName",
+        "imported_steps": 260,
+        "status": "with_errors"
+      }
     },
     "last_error": {
-      "rule": "unknown_attribute",
-      "message": "Attribute value “ExitAfterLast” unknown."
+      "rule": "missing_field",
+      "message": "Field “FertigungFreigabeStatus” missing."
     }
   },
   "recent_events": [
     {
       "event_type": "import_log_issue",
-      "rule": "unknown_attribute",
+      "rule": "missing_function",
       "severity": "error",
       "script_name": "ScriptName",
-      "script_line": "160",
-      "step_name": "Go to Record/Request/Page",
-      "attribute_name": "Step",
-      "unknown_value": "ExitAfterLast",
-      "message": "Attribute value “ExitAfterLast” unknown."
+      "script_line": "31",
+      "line_number": "31",
+      "step_name": "Set Variable",
+      "label": "Missing function",
+      "code": "1208",
+      "message": "Function referred to in the calculation “cf_Param_Get ( \"Prozess\" )” is missing."
     }
   ],
   "last_change_at": "2026-03-29T17:12:08.921000+00:00",
   "last_event_at": "2026-03-29T17:12:08.922000+00:00",
-  "last_error": ""
+  "last_error": "",
+  "platform": {
+    "system": "Darwin",
+    "python_platform": "darwin"
+  },
+  "defaults": {
+    "documents_dir": "/Users/yourname/Documents"
+  }
 }
 ```
 
@@ -396,6 +519,8 @@ data: {"timestamp":"2026-03-29T17:12:20.000000+00:00"}
 
 Serves a built-in HTML UI for the watch subsystem.
 
+The UI is now loaded from `agent/scripts/companion_watch_ui.html`, not embedded inline in the Python source.
+
 Open in a browser:
 
 ```txt
@@ -408,9 +533,12 @@ The page provides:
   - choose server or local mode
   - choose analyzer
   - provide database path or documents directory
+  - browse for local files or folders using a native picker
+  - auto-fill the host machine's default Documents directory
 
 - **Custom File Watch**
   - watch any file path
+  - browse for the file using a native picker
 
 - **Live status**
   - current path
@@ -419,16 +547,19 @@ The page provides:
   - last change
   - last event
 
-- **Summary and event list**
-  - current import
-  - last completed import
-  - recent events
+- **Grouped import session view**
+  - current import session
+  - recent completed import sessions
+  - per-import script name and imported step count
+  - compact per-error rows with line number first
+  - successful imports that show no errors
 
 The page uses:
 
 - **`GET /watch/results`** for refresh
 - **`GET /watch/stream`** for live updates
 - **`POST /watch/start`** and **`POST /watch/import-log/start`** to begin watching
+- **`POST /watch/pick-path`** to open host-native file/folder chooser dialogs
 - **`POST /watch/stop`** to stop watching
 
 ---
@@ -493,7 +624,7 @@ The server uses a polling loop with standard library file reads. It tracks appen
   "path": "/Users/yourname/Documents/Import.log",
   "poll_interval": 0.5,
   "start_at_end": true,
-  "analyzer": "import_log_unknown_attributes"
+  "analyzer": "import_log"
 }
 ```
 
@@ -508,7 +639,7 @@ The server uses a polling loop with standard library file reads. It tracks appen
     "poll_interval": 0.5,
     "start_at_end": true,
     "analyzer": {
-      "type": "import_log_unknown_attributes"
+      "type": "import_log"
     }
   }
 }
@@ -535,12 +666,12 @@ This is the recommended endpoint for clipboard-import monitoring.
 | `location`        | string           | No       | `server` or `local`. If omitted, inferred from `database_path` / `database_dir`. |
 | `mode`            | string           | No       | Alias for `location`.                                                            |
 | `import_log_path` | string           | No       | Explicit full path override. If provided, wins over all inference.               |
-| `documents_dir`   | string           | No       | Directory used for `server` mode. Default `~/Documents`.                         |
+| `documents_dir`   | string           | No       | Directory used for `server` mode. Default is the host OS Documents folder.       |
 | `database_path`   | string           | No       | Path to a local `.fmp12` file or local database directory.                       |
 | `database_dir`    | string           | No       | Explicit local directory containing `Import.log`.                                |
 | `poll_interval`   | number           | No       | Poll interval in seconds. Default `0.5`.                                         |
 | `start_at_end`    | boolean          | No       | Default `true`.                                                                  |
-| `analyzer`        | string or object | No       | Default `import_log_unknown_attributes`.                                         |
+| `analyzer`        | string or object | No       | Default `import_log`.                                                            |
 
 **Resolution rules:**
 
@@ -549,7 +680,9 @@ This is the recommended endpoint for clipboard-import monitoring.
 
 - **server mode**
   - resolves to `{documents_dir}/Import.log`
-  - default documents directory is `~/Documents`
+  - default documents directory is resolved per host OS
+  - macOS and Linux typically resolve to `~/Documents`
+  - Windows resolves to the user's real Documents folder when available
 
 - **local mode**
   - resolves to `<database dir>/Import.log`
@@ -560,7 +693,7 @@ This is the recommended endpoint for clipboard-import monitoring.
 ```json
 {
   "location": "server",
-  "analyzer": "import_log_unknown_attributes"
+  "analyzer": "import_log"
 }
 ```
 
@@ -570,7 +703,7 @@ This is the recommended endpoint for clipboard-import monitoring.
 {
   "location": "local",
   "database_path": "/Users/yourname/Projects/MySolution/MySolution.fmp12",
-  "analyzer": "import_log_unknown_attributes"
+  "analyzer": "import_log"
 }
 ```
 
@@ -585,7 +718,7 @@ This is the recommended endpoint for clipboard-import monitoring.
     "running": true,
     "path": "/Users/yourname/Projects/MySolution/Import.log",
     "analyzer": {
-      "type": "import_log_unknown_attributes"
+      "type": "import_log"
     }
   }
 }
@@ -1006,6 +1139,18 @@ The parser extracts:
 - **message**
 - **unknown value** when the message matches `Attribute value ... unknown.`
 
+It also classifies common FileMaker import error categories such as:
+
+- **missing field**
+- **missing table reference**
+- **missing function**
+- **missing script**
+- **missing layout**
+- **missing field reference**
+- **missing attribute**
+- **unknown attribute value**
+- **unknown error**
+
 ### Import lifecycle tracking
 
 The server also tracks import lifecycle lines such as:
@@ -1018,8 +1163,12 @@ This allows it to build:
 
 - **`summary.current_import`**
 - **`summary.last_completed_import`**
+- **`summary.recent_imports`**
 - **error count during an import**
 - **imported step count**
+- **per-import compact error rows**
+- **counts of successful vs failing imports**
+- **error counts by FileMaker code**
 
 ### Terminal log output
 
@@ -1035,7 +1184,7 @@ When an issue is detected, the server logs a warning immediately. For import log
 Example:
 
 ```txt
-2026-03-29T19:12:08 WARNING File watch match [unknown_attribute]: script=ScriptName line=160 step=Go to Record/Request/Page attribute=Step value=ExitAfterLast message=Attribute value “ExitAfterLast” unknown.
+2026-03-29T19:12:08 WARNING File watch match [missing_function]: script=ScriptName line=31 step=Set Variable attribute= value= message=Function referred to in the calculation “cf_Param_Get ( "Prozess" )” is missing.
 ```
 
 ---
@@ -1092,7 +1241,7 @@ Recommended sequence:
 
 1. **Start Import.log watch**
    - call `POST /watch/import-log/start`
-   - use `import_log_unknown_attributes`
+   - use `import_log`
 
 2. **Import script steps from clipboard in FileMaker**
 
@@ -1102,7 +1251,7 @@ Recommended sequence:
    - or inspect `/watch/ui`
    - or watch the terminal where the server is running
 
-This is useful when AI-generated script steps contain unknown parameters or invalid attribute values.
+This is useful when AI-generated script steps contain unknown parameters, missing references, layout/script/function issues, or any other non-zero import log errors.
 
 ### Pending job flow for paste automation
 
@@ -1125,6 +1274,17 @@ http://127.0.0.1:8765/watch/ui
 ```
 
 This is useful when you want a persistent live view without manually polling the JSON endpoints.
+
+The current Watch UI is optimized around grouped import sessions instead of a flat recent-event list.
+
+Each import card shows:
+
+- **script name**
+- **import status**
+- **imported line count**
+- **error count**
+- **compact error rows with line number first**
+- **a no-error message for successful imports**
 
 ---
 
@@ -1238,7 +1398,37 @@ The UI depends on:
 - `GET /watch/results`
 - `GET /watch/stream`
 
+The path picker buttons also depend on:
+
+- `POST /watch/pick-path`
+
 If those endpoints fail, inspect the browser console and the server terminal log.
+
+### Path picker buttons fail
+
+The Watch UI path picker tries multiple host-native strategies.
+
+Behavior:
+
+- **first choice**
+  - `tkinter`, if available in the Python build
+
+- **macOS fallback**
+  - `osascript`
+
+- **Windows fallback**
+  - PowerShell dialogs
+
+If clicking a picker button still fails:
+
+- **restart the Companion Server**
+  - old running code may still be active
+
+- **check the server terminal log**
+  - picker failures are logged there
+
+- **enter the path manually**
+  - all picker fields still accept direct text input
 
 ### `POST /trigger` fails
 

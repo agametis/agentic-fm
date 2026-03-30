@@ -20,6 +20,7 @@ import argparse
 import json
 import logging
 import os
+import platform
 import re
 import signal
 import socket
@@ -136,6 +137,180 @@ def _clone_jsonable(data):
     return json.loads(json.dumps(data, ensure_ascii=False))
 
 
+def _default_documents_dir() -> str:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            buffer = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            result = ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buffer)
+            if result == 0 and buffer.value:
+                return buffer.value
+        except Exception:
+            pass
+
+        user_profile = os.environ.get("USERPROFILE", "")
+        if user_profile:
+            return os.path.join(user_profile, "Documents")
+
+    return os.path.expanduser("~/Documents")
+
+
+def _split_initial_path(initial_path: str) -> tuple[str, str]:
+    initial_path = os.path.expanduser(initial_path or "")
+    initial_dir = ""
+    initial_file = ""
+    if initial_path:
+        if os.path.isdir(initial_path):
+            initial_dir = initial_path
+        else:
+            initial_dir = os.path.dirname(initial_path)
+            initial_file = os.path.basename(initial_path)
+    return initial_dir, initial_file
+
+
+def _open_path_dialog_tk(selection_type: str, initial_path: str = "", title: str = "") -> str:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    initial_dir, initial_file = _split_initial_path(initial_path)
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except Exception:
+        pass
+    root.update()
+
+    try:
+        if selection_type == "directory":
+            selected_path = filedialog.askdirectory(
+                title=title or "Select folder",
+                initialdir=initial_dir or _default_documents_dir(),
+                parent=root,
+                mustexist=True,
+            )
+        elif selection_type == "file":
+            selected_path = filedialog.askopenfilename(
+                title=title or "Select file",
+                initialdir=initial_dir or _default_documents_dir(),
+                initialfile=initial_file,
+                parent=root,
+                filetypes=[
+                    ("Log and FileMaker files", "*.log *.fmp12"),
+                    ("All files", "*"),
+                ],
+            )
+        else:
+            raise ValueError("selection_type must be file or directory")
+    finally:
+        root.destroy()
+
+    return selected_path or ""
+
+
+def _apple_script_quote(value: str) -> str:
+    return str(value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _open_path_dialog_macos(selection_type: str, initial_path: str = "", title: str = "") -> str:
+    initial_dir, _ = _split_initial_path(initial_path)
+    if not initial_dir:
+        initial_dir = _default_documents_dir()
+
+    location_clause = ""
+    if initial_dir and os.path.exists(initial_dir):
+        location_clause = f' default location (POSIX file "{_apple_script_quote(initial_dir)}")'
+
+    prompt = _apple_script_quote(title or ("Select folder" if selection_type == "directory" else "Select file"))
+    if selection_type == "directory":
+        choose_stmt = f'set chosenItem to choose folder with prompt "{prompt}"{location_clause}'
+    elif selection_type == "file":
+        choose_stmt = f'set chosenItem to choose file with prompt "{prompt}"{location_clause}'
+    else:
+        raise ValueError("selection_type must be file or directory")
+
+    script = "\n".join(
+        [
+            "try",
+            f"    {choose_stmt}",
+            "    return POSIX path of chosenItem",
+            "on error number -128",
+            '    return ""',
+            "end try",
+        ]
+    )
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        error_message = (result.stderr or result.stdout or "osascript path picker failed").strip()
+        raise RuntimeError(error_message)
+    return (result.stdout or "").strip()
+
+
+def _powershell_single_quote(value: str) -> str:
+    return str(value or "").replace("'", "''")
+
+
+def _open_path_dialog_windows(selection_type: str, initial_path: str = "", title: str = "") -> str:
+    initial_dir, initial_file = _split_initial_path(initial_path)
+    if not initial_dir:
+        initial_dir = _default_documents_dir()
+
+    if selection_type == "file":
+        script = "\n".join(
+            [
+                "Add-Type -AssemblyName System.Windows.Forms",
+                "$dialog = New-Object System.Windows.Forms.OpenFileDialog",
+                f"$dialog.Title = '{_powershell_single_quote(title or 'Select file')}'",
+                f"$dialog.InitialDirectory = '{_powershell_single_quote(initial_dir)}'",
+                f"$dialog.FileName = '{_powershell_single_quote(initial_file)}'",
+                "$dialog.Filter = 'Log and FileMaker files (*.log;*.fmp12)|*.log;*.fmp12|All files (*.*)|*.*'",
+                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.FileName }",
+            ]
+        )
+    elif selection_type == "directory":
+        script = "\n".join(
+            [
+                "Add-Type -AssemblyName System.Windows.Forms",
+                "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+                f"$dialog.Description = '{_powershell_single_quote(title or 'Select folder')}'",
+                f"$dialog.SelectedPath = '{_powershell_single_quote(initial_dir)}'",
+                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }",
+            ]
+        )
+    else:
+        raise ValueError("selection_type must be file or directory")
+
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-STA", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        error_message = (result.stderr or result.stdout or "PowerShell path picker failed").strip()
+        raise RuntimeError(error_message)
+    return (result.stdout or "").strip()
+
+
+def _open_path_dialog(selection_type: str, initial_path: str = "", title: str = "") -> str:
+    try:
+        return _open_path_dialog_tk(selection_type, initial_path=initial_path, title=title)
+    except (ImportError, ModuleNotFoundError):
+        if sys.platform == "darwin":
+            return _open_path_dialog_macos(selection_type, initial_path=initial_path, title=title)
+        if sys.platform == "win32":
+            return _open_path_dialog_windows(selection_type, initial_path=initial_path, title=title)
+        raise RuntimeError("No native path picker available on this Python installation. Enter the path manually.")
+
+
 def _new_file_watch_summary() -> dict:
     return {
         "events_total": 0,
@@ -172,6 +347,13 @@ def _watch_results_payload_from_state(state: dict) -> dict:
         "last_change_at": state["last_change_at"],
         "last_event_at": state["last_event_at"],
         "last_error": state["last_error"],
+        "platform": {
+            "system": platform.system(),
+            "python_platform": sys.platform,
+        },
+        "defaults": {
+            "documents_dir": _default_documents_dir(),
+        },
     }
 
 
@@ -807,7 +989,7 @@ def _resolve_import_log_path(payload: dict) -> dict:
         location = "local" if database_path or database_dir else "server"
 
     if location == "server":
-        documents_dir = os.path.expanduser(payload.get("documents_dir", "~/Documents"))
+        documents_dir = os.path.expanduser(payload.get("documents_dir") or _default_documents_dir())
         return {
             "location": "server",
             "path": os.path.join(documents_dir, "Import.log"),
@@ -927,6 +1109,12 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """HTTPServer with thread-per-request concurrency."""
     daemon_threads = True
 
+    def handle_error(self, request, client_address):
+        error = sys.exc_info()[1]
+        if isinstance(error, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
 
 # ---------------------------------------------------------------------------
 # Request handler
@@ -980,6 +1168,8 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self._handle_watch_start()
         elif path == "/watch/import-log/start":
             self._handle_watch_import_log_start()
+        elif path == "/watch/pick-path":
+            self._handle_watch_pick_path()
         elif path == "/watch/stop":
             self._handle_watch_stop()
         elif path == "/webviewer/start":
@@ -1130,7 +1320,41 @@ class CompanionHandler(BaseHTTPRequestHandler):
             }
         )
 
+    def _handle_watch_pick_path(self):
+        try:
+            body = self._read_body()
+            payload = json.loads(body) if body else {}
+        except (ValueError, OSError) as exc:
+            self._send_json({"success": False, "error": f"Invalid request: {exc}"}, status=400)
+            return
+
+        selection_type = str(payload.get("selection_type", "file") or "file").strip().lower()
+        initial_path = str(payload.get("initial_path", "") or "")
+        title = str(payload.get("title", "") or "")
+
+        try:
+            selected_path = _open_path_dialog(selection_type, initial_path=initial_path, title=title)
+        except ValueError as exc:
+            self._send_json({"success": False, "error": str(exc)}, status=400)
+            return
+        except Exception as exc:
+            log.exception("Failed to open watch path picker: %s", exc)
+            self._send_json({"success": False, "error": str(exc)}, status=500)
+            return
+
+        self._send_json(
+            {
+                "success": True,
+                "selected_path": selected_path,
+                "cancelled": not bool(selected_path),
+            }
+        )
+
     def _handle_watch_stop(self):
+        try:
+            self._read_body()
+        except OSError:
+            pass
         was_running = _stop_file_watch()
         if was_running:
             log.info("File watch stopped")
