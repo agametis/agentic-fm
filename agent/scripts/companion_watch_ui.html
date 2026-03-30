@@ -138,6 +138,10 @@
       button.danger {
         background: linear-gradient(180deg, #c9405e, #a52d48);
       }
+      button:disabled {
+        cursor: default;
+        opacity: 0.5;
+      }
       .button-row {
         display: flex;
         gap: 10px;
@@ -382,7 +386,6 @@
           <div class="button-row">
             <button type="button" id="startImportButton">Start watch</button>
             <button type="button" id="stopButton" class="danger">Stop watch</button>
-            <button type="button" id="refreshButton" class="secondary">Refresh</button>
           </div>
         </section>
 
@@ -458,6 +461,21 @@
       function setStreamBadge(text, level = "") {
         $("streamBadge").textContent = text;
         $("streamBadge").className = `badge${level ? ` ${level}` : ""}`;
+      }
+
+      function updateWatchActionButtons(running) {
+        const startButton = $("startImportButton");
+        const stopButton = $("stopButton");
+        if (startButton) {
+          startButton.hidden = Boolean(running);
+          startButton.disabled = Boolean(running);
+          startButton.className = "";
+        }
+        if (stopButton) {
+          stopButton.hidden = !running;
+          stopButton.disabled = !running;
+          stopButton.className = "danger";
+        }
       }
 
       function escapeHtml(value) {
@@ -745,6 +763,7 @@
         const running = Boolean(state.running);
         $("runningBadge").textContent = running ? "running" : "stopped";
         $("runningBadge").className = `badge ${running ? "ok" : "warn"}`;
+        updateWatchActionButtons(running);
         const lastErrorText = formatStatusLastError(state);
         $("statusGrid").innerHTML = [
           ["Path", state.path || ""],
@@ -965,9 +984,6 @@
       $("stopButton").addEventListener("click", () =>
         stopWatch().catch((error) => alert(error.message)),
       );
-      $("refreshButton").addEventListener("click", () =>
-        refresh().catch((error) => alert(error.message)),
-      );
       $("browseDatabaseFolderButton").addEventListener("click", () =>
         browseDatabaseFolder().catch((error) => alert(error.message)),
       );
@@ -978,6 +994,7 @@
         toggleNotifications().catch((error) => alert(error.message)),
       );
 
+      updateWatchActionButtons(false);
       updateNotificationsButton();
       refresh().then((state) => {
         if (state?.running) {
