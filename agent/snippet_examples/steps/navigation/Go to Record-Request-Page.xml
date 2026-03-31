@@ -2,6 +2,7 @@
 <fmxmlsnippet type="FMObjectList">
   <Step enable="True" id="16" name="Go to Record/Request/Page">
     <NoInteract state="True"/>
+    <Exit state="True"/>
     <RowPageLocation value="ByCalculation"/>
     <Calculation><![CDATA[""]]></Calculation>
   </Step>
