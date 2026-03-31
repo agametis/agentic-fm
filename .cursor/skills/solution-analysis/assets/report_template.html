@@ -104,6 +104,9 @@ html { scrollbar-color: var(--border) var(--bg); }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pfg-tab-btn { background:none; border:none; border-bottom:2px solid transparent; padding:8px 16px; cursor:pointer; color:var(--text-muted); font-size:0.9rem; font-weight:400; white-space:nowrap; margin-bottom:-1px; }
+.pfg-tab-btn:hover { color:var(--text); }
+.pfg-tab-btn.pfg-active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
 
 .tab-content { display: none; padding: 24px 32px; }
 .tab-content.active { display: block; }
@@ -470,6 +473,19 @@ section('Overview', function() {
     <div style="color:var(--text-muted);font-size:0.82rem;margin-top:4px;">${perf.unstored_pct || 0}% of all fields &bull; ${totalSummary} summary fields</div>
   </div>`;
 
+  // Multi-file architecture card (when applicable)
+  const mf = safe(PROFILE, 'multi_file', {});
+  if (mf.is_multi_file && mf.file_architecture && mf.file_architecture !== 'single') {
+    const archLabels = { data_separation: 'Data Separation', multi_file: 'Multi-File' };
+    const archLabel = archLabels[mf.file_architecture] || mf.file_architecture;
+    const fileList = (mf.files || []).map(f => `${esc(f.name)} (${esc(f.role)})`).join(', ');
+    html += `<div class="highlight-card" style="border-color:#fb923c;">
+      <h4>Multi-File Architecture</h4>
+      <div class="hl-value">${esc(archLabel)}</div>
+      <div style="color:var(--text-muted);font-size:0.82rem;margin-top:4px;">${esc(fileList)}</div>
+    </div>`;
+  }
+
   html += '</div>';
 
   // Extensions note
@@ -496,6 +512,11 @@ section('Data Model', function() {
 
   const perf = dm.performance || {};
   const hotspots = perf.hotspot_tables || [];
+
+  // Detect multi-file at section scope (needed for table headers and chart)
+  const solName = PROFILE.solution || '';
+  const sourceFiles = new Set(Object.values(tables).map(t => t.source_file || solName));
+  const isMultiFile = sourceFiles.size > 1;
 
   // Build static HTML structure
   document.getElementById('tabDataModel').innerHTML = `
@@ -527,13 +548,14 @@ section('Data Model', function() {
         <div class="chart-container"><canvas id="chartPerfHotspots"></canvas></div>
       </div>` : ''}
     </div>
-    <div class="card" style="margin-bottom:20px"><h3>Table Relationship Graph</h3><div id="relGraph" class="network-container"></div></div>
+    <div class="card" style="margin-bottom:20px"><h3>Solution Visualization</h3><div id="relGraph" class="network-container"></div><div id="relGraphLegend" style="display:none;padding:8px 12px;font-size:0.82rem;color:var(--text-muted);"></div></div>
+    <div id="perFileGraphsSection" style="display:none"></div>
     <div class="grid-2">
       <div class="card"><h3>Table Sizes (Field Count)</h3><div class="chart-container"><canvas id="chartTableSizes"></canvas></div></div>
       <div class="card"><h3>Field Types Distribution</h3><div class="chart-container"><canvas id="chartFieldTypes"></canvas></div></div>
     </div>
     <div class="card"><h3>All Tables</h3><table id="tableList" class="display" style="width:100%"><thead><tr>
-      <th>Table</th><th>Fields</th><th>PK</th><th>FKs</th><th>Unstored</th><th>Summary</th><th>Global</th><th>Text</th><th>Number</th><th>Other</th>
+      <th>Table</th>${isMultiFile ? '<th>Source</th>' : ''}<th>Fields</th><th>PK</th><th>FKs</th><th>Unstored</th><th>Summary</th><th>Global</th><th>Text</th><th>Number</th><th>Other</th>
     </tr></thead><tbody></tbody></table></div>`;
 
   // Topology stats
@@ -559,21 +581,196 @@ section('Data Model', function() {
   // Lazy-init charts
   registerChart('tabDataModel', function() {
     // Force-directed graph (Vis.js)
-    const nodes = Object.entries(tables).map(([name, t], i) => ({
-      id: name, label: name, value: t.field_count,
-      color: { background: colorFor(i), border: colorFor(i), highlight: { background: '#fff', border: colorFor(i) } },
-      font: { color: '#e1e4ed', size: 11 }, shape: 'dot',
-      title: `${name}\n${t.field_count} fields\nTOs: ${(toGroups[name] || {count: 0}).count || 0}`,
-    }));
-    const edges = (dm.base_table_edges || []).map(([a, b]) => ({
-      from: a, to: b,
-      color: { color: 'rgba(108,140,255,0.3)', highlight: '#6c8cff' }, width: 1,
-    }));
+    // Determine if multi-file — color nodes by source file
+    const mfInfo = safe(PROFILE, 'multi_file', {});
+    // Color palette: local file = blue, first external = orange, others cycle
+    const fileColors = {};
+    let fileIdx = 0;
+    const externalPalette = ['#fb923c', '#4ade80', '#a78bfa', '#f472b6', '#38bdf8'];
+    sourceFiles.forEach(sf => {
+      if (sf === solName) { fileColors[sf] = '#6c8cff'; }
+      else { fileColors[sf] = externalPalette[fileIdx++ % externalPalette.length]; }
+    });
+
+    const nodes = Object.entries(tables).map(([name, t], i) => {
+      const src = t.source_file || solName;
+      const bg = isMultiFile ? fileColors[src] : colorFor(i);
+      return {
+        id: name, label: name, value: t.field_count,
+        color: { background: bg, border: bg, highlight: { background: '#fff', border: bg } },
+        font: { color: '#e1e4ed', size: 11 }, shape: 'dot',
+        title: `${name}\n${t.field_count} fields\nSource: ${src}\nTOs: ${(toGroups[name] || {count: 0}).count || 0}`,
+      };
+    });
+    const edges = (dm.base_table_edges || []).map(e => {
+      // Support both old [a, b] and new {left, right, cross_file} formats
+      const from = e.left || e[0];
+      const to = e.right || e[1];
+      const crossFile = e.cross_file || false;
+      return {
+        from, to,
+        dashes: crossFile,
+        color: { color: crossFile ? 'rgba(251,146,60,0.4)' : 'rgba(108,140,255,0.3)', highlight: crossFile ? '#fb923c' : '#6c8cff' },
+        width: crossFile ? 2 : 1,
+      };
+    });
     new vis.Network(document.getElementById('relGraph'), { nodes, edges }, {
       physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -40, centralGravity: 0.005, springLength: 120 }, stabilization: { iterations: 200 } },
       interaction: { hover: true, tooltipDelay: 100 },
       nodes: { scaling: { min: 8, max: 40 } },
     });
+
+    // Show legend for multi-file solutions
+    if (isMultiFile) {
+      const legendEl = document.getElementById('relGraphLegend');
+      if (legendEl) {
+        let legendHtml = '';
+        Object.entries(fileColors).forEach(([name, color]) => {
+          const role = (mfInfo.files || []).find(f => f.name === name);
+          const roleLabel = role ? ` (${role.role})` : '';
+          legendHtml += `<span style="margin-right:16px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:4px;vertical-align:middle;"></span>${esc(name)}${esc(roleLabel)}</span>`;
+        });
+        legendHtml += '<span style="margin-right:16px;"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed rgba(251,146,60,0.7);margin-right:4px;vertical-align:middle;"></span>Cross-file</span>';
+        legendEl.innerHTML = legendHtml;
+        legendEl.style.display = 'block';
+      }
+    }
+
+    // Per-file relationship graphs (tabbed interface)
+    const pfg = PROFILE.per_file_graphs || {};
+    const pfgFiles = Object.keys(pfg).filter(f => (pfg[f].base_table_edges || []).length > 0);
+    if (pfgFiles.length > 0) {
+      const pfgSection = document.getElementById('perFileGraphsSection');
+      pfgSection.style.display = 'block';
+
+      const fileRoles = {};
+      (mfInfo.files || []).forEach(f => { fileRoles[f.name] = f.role || ''; });
+
+      // Build tabbed UI
+      let pfgHtml = '<div class="card" style="margin-bottom:20px;">';
+      pfgHtml += '<h3>Per-File Relationship Graphs</h3>';
+
+      // Tab bar
+      pfgHtml += '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;">';
+      pfgFiles.forEach((fname, fi) => {
+        const role = fileRoles[fname] || '';
+        const roleLabel = role ? ` (${role})` : '';
+        const isActive = fi === 0;
+        pfgHtml += `<button class="pfg-tab-btn${isActive ? ' pfg-active' : ''}" data-pfg-idx="${fi}">${esc(fname)}${esc(roleLabel)}</button>`;
+      });
+      pfgHtml += '</div>';
+
+      // Tab panels
+      pfgFiles.forEach((fname, fi) => {
+        const fg = pfg[fname];
+        const fgEdges = fg.base_table_edges || [];
+        const fgTables = fg.tables || {};
+        const tc = fg.table_classifications || {};
+        const hasClass = Object.keys(tc).length > 0;
+        const edgeCount = fgEdges.length;
+        const tableCount = Object.keys(fgTables).length;
+        const erdCount = fgEdges.filter(e => e.erd_classification === 'true_erd').length;
+        const utilCount = fgEdges.filter(e => e.erd_classification === 'utility').length;
+
+        // Classification summary for data files
+        let classSummary = '';
+        if (hasClass) {
+          const byCls = {};
+          Object.values(tc).forEach(t => { byCls[t.classification] = (byCls[t.classification] || 0) + 1; });
+          const parts = [];
+          if (byCls.entity) parts.push(`${byCls.entity} entity`);
+          if (byCls.join) parts.push(`${byCls.join} join`);
+          if (byCls.utility) parts.push(`${byCls.utility} utility`);
+          classSummary = `<span style="margin-left:12px;">${parts.join(', ')}</span>`;
+        }
+
+        pfgHtml += `<div class="pfg-tab-panel" data-pfg-idx="${fi}" style="${fi !== 0 ? 'display:none;' : ''}">
+          <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px;font-size:0.85rem;color:var(--text-muted);">
+            <span><strong>${tableCount}</strong> tables</span>
+            <span><strong>${edgeCount}</strong> relationships</span>
+            <span><strong>${fg.to_count || 0}</strong> TOs</span>
+            ${erdCount > 0 ? `<span><strong>${erdCount}</strong> true ERD</span>` : ''}
+            ${utilCount > 0 ? `<span><strong>${utilCount}</strong> utility</span>` : ''}
+            ${classSummary}
+          </div>
+          <div id="pfGraph_${fi}" class="network-container"></div>
+          <div id="pfLegend_${fi}" style="padding:8px 12px;font-size:0.82rem;color:var(--text-muted);"></div>
+        </div>`;
+      });
+      pfgHtml += '</div>';
+      pfgSection.innerHTML = pfgHtml;
+
+      // Tab switching logic
+      const pfgRendered = new Set();
+      function switchPfgTab(idx) {
+        document.querySelectorAll('.pfg-tab-btn').forEach(btn => {
+          btn.classList.toggle('pfg-active', parseInt(btn.dataset.pfgIdx) === idx);
+        });
+        document.querySelectorAll('.pfg-tab-panel').forEach(p => {
+          p.style.display = parseInt(p.dataset.pfgIdx) === idx ? '' : 'none';
+        });
+        if (!pfgRendered.has(idx)) renderPfgGraph(idx);
+      }
+      document.querySelectorAll('.pfg-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchPfgTab(parseInt(btn.dataset.pfgIdx)));
+      });
+
+      // Render a per-file graph by index (lazy — only on first tab activation)
+      const erdColors = { entity: '#4ade80', join: '#facc15', utility: '#6b7280' };
+      function renderPfgGraph(fi) {
+        pfgRendered.add(fi);
+        const fname = pfgFiles[fi];
+        const fg = pfg[fname];
+        const fgTables = fg.tables || {};
+        const fgEdges = fg.base_table_edges || [];
+        const tc = fg.table_classifications || {};
+        const hasClass = Object.keys(tc).length > 0;
+
+        const nodes = Object.entries(fgTables).map(([name, t], i) => {
+          const cls = tc[name] ? tc[name].classification : null;
+          const bg = hasClass && cls ? erdColors[cls] : colorFor(i);
+          const clsLabel = cls ? ` [${cls}]` : '';
+          return {
+            id: name, label: name, value: t.field_count || 1,
+            color: { background: bg, border: bg, highlight: { background: '#fff', border: bg } },
+            font: { color: '#e1e4ed', size: 11 }, shape: 'dot',
+            title: `${name}${clsLabel}\n${t.field_count || 0} fields${cls && tc[name].signals ? '\n' + tc[name].signals.join(', ') : ''}`,
+          };
+        });
+
+        const edges = fgEdges.map(e => {
+          const isUtil = e.erd_classification === 'utility';
+          const isUncertain = e.erd_classification === 'uncertain';
+          return {
+            from: e.left, to: e.right,
+            dashes: isUtil,
+            color: { color: isUtil ? 'rgba(107,114,128,0.4)' : isUncertain ? 'rgba(250,204,21,0.4)' : 'rgba(74,222,128,0.4)', highlight: isUtil ? '#6b7280' : isUncertain ? '#facc15' : '#4ade80' },
+            width: isUtil ? 1 : 2,
+            title: `${e.left} \u2014 ${e.right}\nJoin: ${e.join_type || 'Equal'}\nFields: ${e.join_fields || ''}\nERD: ${e.erd_classification || 'unknown'}${e.cascade_delete ? '\nCascade Delete' : ''}${e.to_pairs > 1 ? '\nTO pairs: ' + e.to_pairs : ''}`,
+          };
+        });
+
+        new vis.Network(document.getElementById(`pfGraph_${fi}`), { nodes, edges }, {
+          physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -35, centralGravity: 0.008, springLength: 100 }, stabilization: { iterations: 200 } },
+          interaction: { hover: true, tooltipDelay: 100 },
+          nodes: { scaling: { min: 8, max: 35 } },
+        });
+
+        // Legend
+        let lgHtml = '';
+        if (hasClass) {
+          lgHtml += '<span style="margin-right:14px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#4ade80;margin-right:4px;vertical-align:middle;"></span>Entity</span>';
+          lgHtml += '<span style="margin-right:14px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#facc15;margin-right:4px;vertical-align:middle;"></span>Join</span>';
+          lgHtml += '<span style="margin-right:14px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#6b7280;margin-right:4px;vertical-align:middle;"></span>Utility</span>';
+        }
+        lgHtml += '<span style="margin-right:14px;"><span style="display:inline-block;width:16px;height:0;border-top:2px solid rgba(74,222,128,0.7);margin-right:4px;vertical-align:middle;"></span>True ERD</span>';
+        lgHtml += '<span style="margin-right:14px;"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed rgba(107,114,128,0.7);margin-right:4px;vertical-align:middle;"></span>Utility rel.</span>';
+        document.getElementById(`pfLegend_${fi}`).innerHTML = lgHtml;
+      }
+
+      // Render first tab immediately
+      renderPfgGraph(0);
+    }
 
     // Table sizes bar chart
     const sorted = Object.entries(tables).sort((a, b) => b[1].field_count - a[1].field_count).slice(0, 25);
@@ -619,13 +816,18 @@ section('Data Model', function() {
     }
 
     // Tables DataTable (with unstored/summary/global columns)
-    const rows = Object.entries(tables).map(([name, t]) => [
-      name, t.field_count, t.has_primary_key ? 'Yes' : 'No', t.foreign_key_count,
-      t.unstored_count || 0, t.summary_count || 0, t.global_count || 0,
-      (t.by_datatype || {})['Text'] || 0, (t.by_datatype || {})['Number'] || 0,
-      Object.entries(t.by_datatype || {}).filter(([k]) => !['Text','Number'].includes(k)).reduce((s, [_, v]) => s + v, 0),
-    ]);
-    $('#tableList').DataTable({ data: rows, order: [[1, 'desc']], pageLength: 15, language: { search: 'Filter:' } });
+    const rows = Object.entries(tables).map(([name, t]) => {
+      const base = [
+        name, t.field_count, t.has_primary_key ? 'Yes' : 'No', t.foreign_key_count,
+        t.unstored_count || 0, t.summary_count || 0, t.global_count || 0,
+        (t.by_datatype || {})['Text'] || 0, (t.by_datatype || {})['Number'] || 0,
+        Object.entries(t.by_datatype || {}).filter(([k]) => !['Text','Number'].includes(k)).reduce((s, [_, v]) => s + v, 0),
+      ];
+      if (isMultiFile) base.splice(1, 0, t.source_file || solName);
+      return base;
+    });
+    const sortCol = isMultiFile ? 2 : 1;
+    $('#tableList').DataTable({ data: rows, order: [[sortCol, 'desc']], pageLength: 15, language: { search: 'Filter:' } });
   });
 });
 
@@ -823,15 +1025,28 @@ section('Scripts', function() {
 section('UI Layer', function() {
   const ui = safe(PROFILE, 'ui_layer', {});
 
+  const lp = ui.layout_purpose || {};
+  const bp = lp.by_purpose || {};
+  const purposeColors = { ui: '#6c8cff', output: '#fb923c', 'output/ui': '#f59e0b', utility: '#6b7280', developer: '#a78bfa' };
+
   document.getElementById('tabUI').innerHTML = `
-    <div class="grid-2">
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="card"><h3>Layout Purpose</h3><div class="chart-container"><canvas id="chartLayoutPurpose"></canvas></div></div>
       <div class="card"><h3>Layout Classification</h3><div class="chart-container"><canvas id="chartLayoutClass"></canvas></div></div>
-      <div class="card"><h3>Layouts per Base Table (Top 20)</h3><div class="chart-container"><canvas id="chartLayoutsByTO"></canvas></div></div>
+      <div class="card"><h3>Purpose Breakdown</h3>
+        <div style="padding:8px 0;">
+          ${Object.entries(bp).sort((a,b) => b[1]-a[1]).map(([k,v]) =>
+            '<div class="stat-row"><span class="stat-label" style="text-transform:capitalize;">' + esc(k) + '</span><span class="stat-value" style="color:' + (purposeColors[k]||'#e1e4ed') + '">' + v + '</span></div>'
+          ).join('')}
+          <div class="stat-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;"><span class="stat-label">Total</span><span class="stat-value">${ui.total || 0}</span></div>
+        </div>
+      </div>
     </div>
     <div class="grid-2">
+      <div class="card"><h3>Layouts per Base Table (Top 20)</h3><div class="chart-container"><canvas id="chartLayoutsByTO"></canvas></div></div>
       <div class="card"><h3>Portal Usage</h3><div id="portalList"></div></div>
-      <div class="card"><h3>Orphaned Layouts <span class="badge badge-red" id="orphanBadge"></span></h3><ul class="scroll-list" id="orphanedList"></ul></div>
-    </div>`;
+    </div>
+    <div class="card"><h3>Orphaned Layouts <span class="badge badge-red" id="orphanBadge"></span></h3><ul class="scroll-list" id="orphanedList"></ul></div>`;
 
   document.getElementById('orphanBadge').textContent = (ui.orphaned_layouts || []).length;
 
@@ -851,6 +1066,17 @@ section('UI Layer', function() {
   if ((ui.orphaned_layouts || []).length === 0) orphanList.innerHTML = '<li class="empty-state">None detected.</li>';
 
   registerChart('tabUI', function() {
+    // Layout Purpose doughnut (ui/output/utility/developer)
+    const bpEntries = Object.entries(bp).sort((a, b) => b[1] - a[1]);
+    if (bpEntries.length > 0) {
+      new Chart(document.getElementById('chartLayoutPurpose'), {
+        type: 'doughnut',
+        data: { labels: bpEntries.map(s => s[0].charAt(0).toUpperCase() + s[0].slice(1)), datasets: [{ data: bpEntries.map(s => s[1]), backgroundColor: bpEntries.map(s => purposeColors[s[0]] || colorFor(0)), borderWidth: 0 }] },
+        options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#e1e4ed' } } } }
+      });
+    }
+
+    // Layout Classification doughnut (list/detail/report/etc. — existing)
     const cls = ui.classifications || {};
     const clsSorted = Object.entries(cls).sort((a, b) => b[1] - a[1]);
     if (clsSorted.length > 0) {

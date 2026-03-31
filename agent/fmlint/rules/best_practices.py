@@ -17,12 +17,19 @@ from ..types import Diagnostic, Severity
 
 @rule
 class ErrorCapturePaired(LintRule):
-    """Set Error Capture [On] should be followed by a Get(LastError) check."""
+    """Set Error Capture [On] is present but no Get(LastError) check found
+    anywhere in the script.
+
+    This is informational — many scripts intentionally enable error capture
+    for silent failure (e.g. suppressing dialog boxes on missing records or
+    failed operations).  The rule flags the absence of any error check so
+    the developer can confirm the omission is intentional.
+    """
 
     rule_id = "B001"
     name = "error-capture-paired"
     category = "best_practices"
-    default_severity = Severity.WARNING
+    default_severity = Severity.INFO
     formats = {"xml", "hr"}
     tier = 1
 
@@ -32,94 +39,90 @@ class ErrorCapturePaired(LintRule):
         if not parse_result.ok:
             return []
 
-        rc = self.rule_config(config)
         sev = self.severity(config)
-        lookahead = rc.get("lookahead_steps", 10)
 
-        diags = []
         steps = parse_result.steps
+        has_error_capture_on = False
+        has_last_error_check = False
+        first_capture_line = 0
 
         for idx, step in enumerate(steps):
             name = step.get("name", "")
-            if name != "Set Error Capture":
-                continue
 
-            # Check if this is Set Error Capture [On]
-            # (We warn for any Set Error Capture — if it's [Off] that's fine
-            # but paired checking still makes sense for [On])
-            state_el = step.find("State")
-            if state_el is not None and state_el.get("state") == "False":
-                continue  # This is [Off], skip
+            if name == "Set Error Capture":
+                state_el = step.find("State")
+                if state_el is not None and state_el.get("state") == "False":
+                    continue  # [Off], skip
+                if not has_error_capture_on:
+                    first_capture_line = idx + 1
+                has_error_capture_on = True
 
-            # Look ahead up to lookahead steps for Get(LastError)
-            found = False
-            end = min(idx + 1 + lookahead, len(steps))
-            for ahead_idx in range(idx + 1, end):
-                ahead_step = steps[ahead_idx]
-                for calc in ahead_step.iter("Calculation"):
-                    if calc.text and any(p in calc.text for p in self._LAST_ERROR_PATTERNS):
-                        found = True
-                        break
-                if found:
-                    break
+            # Scan all calculations for Get(LastError)
+            for calc in step.iter("Calculation"):
+                if calc.text and any(p in calc.text for p in self._LAST_ERROR_PATTERNS):
+                    has_last_error_check = True
 
-            if not found:
-                diags.append(Diagnostic(
-                    rule_id=self.rule_id,
-                    severity=sev,
-                    message=(
-                        "Set Error Capture [On] without a subsequent "
-                        "Get(LastError) check within the next "
-                        f"{lookahead} steps"
-                    ),
-                    line=idx + 1,
-                    fix_hint="Add an If [ Get ( LastError ) <> 0 ] check after the error-prone step",
-                ))
+        if has_error_capture_on and not has_last_error_check:
+            return [Diagnostic(
+                rule_id=self.rule_id,
+                severity=sev,
+                message=(
+                    "Set Error Capture [On] is enabled but no "
+                    "Get(LastError) check appears anywhere in the script. "
+                    "This may be intentional (silent error suppression) — "
+                    "verify the omission is deliberate."
+                ),
+                line=first_capture_line,
+                fix_hint=(
+                    "If errors should be handled: add If [ Get ( LastError ) ≠ 0 ] "
+                    "after error-prone steps. If silent suppression is intentional, "
+                    "disable this rule or ignore this diagnostic."
+                ),
+            )]
 
-        return diags
+        return []
 
     def check_hr(self, lines, catalog, context, config):
-        rc = self.rule_config(config)
         sev = self.severity(config)
-        lookahead = rc.get("lookahead_steps", 10)
 
-        diags = []
-        step_lines = [ln for ln in lines if ln.step_name or ln.is_comment]
+        has_error_capture_on = False
+        has_last_error_check = False
+        first_capture_line = 0
 
-        for i, ln in enumerate(step_lines):
-            if ln.step_name != "Set Error Capture":
-                continue
+        for ln in lines:
+            if ln.step_name == "Set Error Capture":
+                bracket = ln.bracket_content or ""
+                if "Off" in bracket:
+                    continue
+                if not has_error_capture_on:
+                    first_capture_line = ln.line_number
+                has_error_capture_on = True
 
-            # Check if it's [Off]
-            bracket = ln.bracket_content or ""
-            if "Off" in bracket:
-                continue
+            # Check bracket content and raw text for Get(LastError)
+            content = ln.bracket_content or ""
+            raw = ln.raw or ""
+            if any(p in content or p in raw for p in self._LAST_ERROR_PATTERNS):
+                has_last_error_check = True
 
-            # Look ahead up to lookahead step lines for Get(LastError)
-            found = False
-            end = min(i + 1 + lookahead, len(step_lines))
-            for ahead_idx in range(i + 1, end):
-                ahead_ln = step_lines[ahead_idx]
-                content = ahead_ln.bracket_content or ""
-                raw = ahead_ln.raw or ""
-                if any(p in content or p in raw for p in self._LAST_ERROR_PATTERNS):
-                    found = True
-                    break
+        if has_error_capture_on and not has_last_error_check:
+            return [Diagnostic(
+                rule_id=self.rule_id,
+                severity=sev,
+                message=(
+                    "Set Error Capture [On] is enabled but no "
+                    "Get(LastError) check appears anywhere in the script. "
+                    "This may be intentional (silent error suppression) — "
+                    "verify the omission is deliberate."
+                ),
+                line=first_capture_line,
+                fix_hint=(
+                    "If errors should be handled: add If [ Get ( LastError ) ≠ 0 ] "
+                    "after error-prone steps. If silent suppression is intentional, "
+                    "disable this rule or ignore this diagnostic."
+                ),
+            )]
 
-            if not found:
-                diags.append(Diagnostic(
-                    rule_id=self.rule_id,
-                    severity=sev,
-                    message=(
-                        "Set Error Capture [On] without a subsequent "
-                        "Get(LastError) check within the next "
-                        f"{lookahead} steps"
-                    ),
-                    line=ln.line_number,
-                    fix_hint="Add an If [ Get ( LastError ) <> 0 ] check after the error-prone step",
-                ))
-
-        return diags
+        return []
 
 
 # ---------------------------------------------------------------------------

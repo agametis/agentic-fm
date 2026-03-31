@@ -6,10 +6,10 @@ Reads pre-indexed data (index files, xref, layout summaries, sanitized scripts)
 and produces a structured solution profile. Never reads raw xml_parsed XML.
 
 Usage:
-  python3 agent/scripts/analyze.py -s "FM_Quickstart_v26_0_1"
-  python3 agent/scripts/analyze.py -s "FM_Quickstart_v26_0_1" --format markdown
-  python3 agent/scripts/analyze.py -s "FM_Quickstart_v26_0_1" --deep
-  python3 agent/scripts/analyze.py -s "FM_Quickstart_v26_0_1" --ensure-prerequisites
+  python3 agent/scripts/analyze.py -s "Solution_Name_Here"
+  python3 agent/scripts/analyze.py -s "Solution_Name_Here" --format markdown
+  python3 agent/scripts/analyze.py -s "Solution_Name_Here" --deep
+  python3 agent/scripts/analyze.py -s "Solution_Name_Here" --ensure-prerequisites
   python3 agent/scripts/analyze.py --list-extensions
 
 Options:
@@ -31,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -93,6 +94,41 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent  # agent/scripts/ -> project root
 
 CONTEXT_DIR = PROJECT_ROOT / "agent" / "context"
 XML_PARSED_DIR = PROJECT_ROOT / "agent" / "xml_parsed"
+
+# ---------------------------------------------------------------------------
+# Status output
+# ---------------------------------------------------------------------------
+
+_STATUS_JSON = False  # Set via --status-json flag
+_T0 = 0.0  # Analysis start time
+
+
+def _status(phase, event="start", **kwargs):
+    """Emit a status message. JSONL to stderr when --status-json, else print()."""
+    elapsed = round(time.monotonic() - _T0, 4) if _T0 else 0
+    if _STATUS_JSON:
+        msg = {"status": f"phase_{event}", "phase": phase, "t": elapsed}
+        msg.update(kwargs)
+        print(json.dumps(msg), file=sys.stderr)
+    else:
+        if event == "start":
+            print(f"  {kwargs.get('label', phase)}...")
+        elif event == "end":
+            dt = kwargs.get("elapsed", 0)
+            items = kwargs.get("items")
+            extra = f" ({items} items)" if items else ""
+            print(f"    {dt:.3f}s{extra}")
+        elif event == "info":
+            print(f"  {kwargs.get('label', '')}")
+        elif event == "complete":
+            print(f"\n==> Analysis complete. ({elapsed:.3f}s)")
+            phases = kwargs.get("phases", {})
+            if phases and _STATUS_JSON:
+                pass  # Already emitted per-phase
+            elif phases:
+                print("  Phase timing:")
+                for p, t in phases.items():
+                    print(f"    {p:.<30s} {t:.3f}s")
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +206,7 @@ def load_relationships_index(solution_dir):
 def load_table_occurrences_index(solution_dir):
     return _parse_index(
         solution_dir / "table_occurrences.index",
-        ["to_name", "to_id", "base_table", "base_table_id"],
+        ["to_name", "to_id", "base_table", "base_table_id", "type", "data_source"],
     )
 
 
@@ -207,8 +243,16 @@ def load_xref_index(solution_dir):
 # Data model analysis
 # ---------------------------------------------------------------------------
 
-def analyze_data_model(fields_index, to_index, relationships_index):
-    """Analyze base tables, fields, TOs, and relationships."""
+def analyze_data_model(fields_index, to_index, relationships_index,
+                       solution_name=None, multi_file_info=None,
+                       correlated_data=None, layouts_index=None,
+                       layout_classification=None):
+    """Analyze base tables, fields, TOs, and relationships.
+
+    When multi_file_info and correlated_data are provided, enriches output
+    with source_file attribution, TO classification, and cross-file edge
+    detection for data separation model solutions.
+    """
     # --- Base tables ---
     tables = {}
     for row in fields_index:
@@ -313,7 +357,102 @@ def analyze_data_model(fields_index, to_index, relationships_index):
             rel_summary["self_joins"] += 1
 
     # --- Topology analysis ---
-    topology = _analyze_topology(to_index, relationships_index, to_map)
+    # Use UI-only layout concentration for topology if available,
+    # otherwise fall back to raw layout concentration
+    topo_layouts = layouts_index
+    topo_ui_concentration = None
+    if layout_classification:
+        topo_ui_concentration = layout_classification.get("ui_concentration")
+    topology = _analyze_topology(to_index, relationships_index, to_map,
+                                  layouts_index=topo_layouts,
+                                  ui_concentration=topo_ui_concentration)
+
+    # --- TO classification ---
+    to_classification = {"local": 0, "external": 0, "by_data_source": {}}
+    for row in to_index:
+        to_type = row.get("type", "")
+        if to_type == "External":
+            to_classification["external"] += 1
+            ds = row.get("data_source", "")
+            if ds:
+                to_classification["by_data_source"][ds] = (
+                    to_classification["by_data_source"].get(ds, 0) + 1
+                )
+        elif to_type == "Local":
+            to_classification["local"] += 1
+
+    # --- Source file attribution ---
+    # Determine which base tables are local to which file
+    data_source_map = {}
+    if multi_file_info:
+        data_source_map = multi_file_info.get("data_source_map", {})
+
+    # Build set of locally-defined base tables (from TOs with type=Local)
+    local_base_tables = set()
+    for row in to_index:
+        if row.get("type", "") == "Local":
+            local_base_tables.add(row["base_table"])
+
+    # Build mapping: base_table_name -> source_file
+    # Also track base_table_id per name to handle name collisions
+    table_source = {}  # table_name -> source_file
+    table_ids_by_source = {}  # (table_name, source_file) -> base_table_id
+
+    for row in to_index:
+        bt = row["base_table"]
+        if not bt:
+            continue
+        if row.get("type", "") == "Local":
+            table_source[bt] = solution_name or ""
+            table_ids_by_source[(bt, solution_name or "")] = row["base_table_id"]
+        elif row.get("type", "") == "External":
+            ds = row.get("data_source", "")
+            corr_sol = data_source_map.get(ds, "")
+            if corr_sol and bt not in local_base_tables:
+                table_source.setdefault(bt, corr_sol)
+                table_ids_by_source[(bt, corr_sol)] = row["base_table_id"]
+
+    # Apply source_file to table summaries
+    for tname in table_summaries:
+        table_summaries[tname]["source_file"] = table_source.get(tname, solution_name or "")
+
+    # Add external tables from correlated solutions into table_summaries
+    # so they appear as nodes in the ERD graph
+    if correlated_data:
+        for corr_name, corr_info in correlated_data.items():
+            for tname in corr_info.get("local_tables", set()):
+                if tname not in table_summaries and tname in table_source:
+                    field_count = corr_info.get("table_field_counts", {}).get(tname, 0)
+                    table_summaries[tname] = {
+                        "id": "",
+                        "field_count": field_count,
+                        "by_datatype": {},
+                        "by_fieldtype": {},
+                        "auto_enter_patterns": {},
+                        "has_primary_key": False,
+                        "foreign_key_count": 0,
+                        "unstored_count": 0,
+                        "global_count": 0,
+                        "summary_count": 0,
+                        "source_file": corr_name,
+                        "is_external": True,
+                    }
+
+    # Build local_tables and external_tables lists
+    local_tables_list = sorted(
+        tname for tname, src in table_source.items()
+        if src == (solution_name or "")
+    )
+    external_tables_dict = collections.defaultdict(list)
+    for tname, src in sorted(table_source.items()):
+        if src and src != (solution_name or ""):
+            # Find which data source name maps to this correlated solution
+            ds_name = ""
+            for dsn, corr in data_source_map.items():
+                if corr == src:
+                    ds_name = dsn
+                    break
+            external_tables_dict[ds_name or src].append(tname)
 
     # --- Base-table relationship pairs for ERD ---
     seen = set()
@@ -325,7 +464,16 @@ def analyze_data_model(fields_index, to_index, relationships_index):
             pair = tuple(sorted([left_base, right_base]))
             if pair not in seen:
                 seen.add(pair)
-                base_table_edges.append(list(pair))
+                left_src = table_source.get(left_base, "")
+                right_src = table_source.get(right_base, "")
+                cross_file = bool(
+                    left_src and right_src and left_src != right_src
+                )
+                base_table_edges.append({
+                    "left": pair[0],
+                    "right": pair[1],
+                    "cross_file": cross_file,
+                })
 
     # --- Performance metrics (solution-wide) ---
     total_unstored = sum(t["unstored_count"] for t in tables.values())
@@ -367,9 +515,15 @@ def analyze_data_model(fields_index, to_index, relationships_index):
         "hotspot_tables": perf_hotspots[:20],
     }
 
+    # Count local tables (from this file's fields_index, not correlated)
+    local_table_count = sum(
+        1 for t in table_summaries.values() if not t.get("is_external")
+    )
+
     return {
         "tables": table_summaries,
-        "table_count": len(table_summaries),
+        "table_count": local_table_count,
+        "total_table_count": len(table_summaries),
         "total_fields": len(fields_index),
         "table_occurrences": to_groups,
         "to_count": len(to_index),
@@ -377,23 +531,417 @@ def analyze_data_model(fields_index, to_index, relationships_index):
         "topology": topology,
         "base_table_edges": base_table_edges,
         "performance": performance,
+        "to_classification": to_classification,
+        "local_tables": local_tables_list,
+        "external_tables": dict(external_tables_dict),
     }
 
 
-def _analyze_topology(to_index, relationships_index, to_map):
-    """Analyze TO topology pattern (anchor-buoy vs spider-web)."""
+# ---------------------------------------------------------------------------
+# Per-file graph building and ERD classification
+# ---------------------------------------------------------------------------
+
+_UTILITY_TABLE_PATTERNS = {
+    "globals", "startup", "defaults", "settings", "config", "admin",
+    "log", "import", "export", "temp", "staging", "navigation",
+    "preferences", "system", "popovers", "vlist", "images",
+}
+
+
+def _classify_tables(fields_index, relationships_index, to_index):
+    """Classify tables as entity/join/utility using heuristics.
+
+    Returns a dict of {table_name: {classification, signals}}.
+    """
+    # Build per-table stats from fields
+    table_stats = {}
+    for row in fields_index:
+        tname = row["table"]
+        if tname not in table_stats:
+            table_stats[tname] = {
+                "has_pk": False,
+                "fk_count": 0,
+                "global_count": 0,
+                "field_count": 0,
+                "descriptive_count": 0,
+                "fk_fields": [],
+            }
+        ts = table_stats[tname]
+        ts["field_count"] += 1
+        fname_lower = row["field"].lower()
+        flags = row.get("flags", "")
+
+        # PK detection
+        if (fname_lower.startswith("__kpt") or fname_lower == "primarykey"
+                or fname_lower == "id"):
+            ts["has_pk"] = True
+
+        # FK detection
+        if (fname_lower.startswith("_kft") or fname_lower.startswith("_kf")
+                or fname_lower.startswith("foreignkey")
+                or fname_lower.startswith("id_")):
+            ts["fk_count"] += 1
+            ts["fk_fields"].append(row["field"])
+
+        # Global detection
+        if "global" in flags:
+            ts["global_count"] += 1
+
+        # Descriptive field: not a key, not auto-enter timestamp/account, not global
+        ae = row.get("auto_enter", "")
+        is_auto = any(k in ae.lower() for k in [
+            "timestamp", "accountname", "uuid", "serial",
+        ]) if ae else False
+        if (not fname_lower.startswith("__kpt")
+                and not fname_lower.startswith("_kf")
+                and not fname_lower.startswith("foreignkey")
+                and not fname_lower.startswith("id_")
+                and fname_lower != "id"
+                and fname_lower != "primarykey"
+                and "global" not in flags
+                and not is_auto):
+            ts["descriptive_count"] += 1
+
+    # Count inbound FK references: how many other tables have FK fields
+    # whose name contains this table's name
+    inbound_refs = collections.Counter()
+    for tname in table_stats:
+        tname_lower = tname.lower()
+        for other_name, other_stats in table_stats.items():
+            if other_name == tname:
+                continue
+            for fk_field in other_stats["fk_fields"]:
+                if tname_lower in fk_field.lower():
+                    inbound_refs[tname] += 1
+                    break  # count each referring table once
+
+    # Classify each table
+    classifications = {}
+    for tname, ts in table_stats.items():
+        signals = []
+        if ts["has_pk"]:
+            signals.append("has_pk")
+        if ts["fk_count"] > 0:
+            signals.append(f"fk_count:{ts['fk_count']}")
+        if ts["global_count"] > 0:
+            signals.append(f"globals:{ts['global_count']}")
+        if inbound_refs[tname] > 0:
+            signals.append(f"inbound_refs:{inbound_refs[tname]}")
+
+        # Classification rules
+        # Note: FM entity tables commonly have global fields for search/filter
+        # UI, so globals alone don't indicate utility. Only classify as utility
+        # if the table has no inbound FK references and no PK.
+        is_referenced = inbound_refs[tname] > 0
+        if (not is_referenced and not ts["has_pk"]
+                and ts["global_count"] > 3):
+            classification = "utility"
+        elif (not is_referenced and ts["fk_count"] == 0
+              and tname.lower() in _UTILITY_TABLE_PATTERNS):
+            classification = "utility"
+        elif (ts["fk_count"] >= 2
+              and ts["descriptive_count"] < ts["fk_count"]
+              and not is_referenced):
+            classification = "join"
+        else:
+            classification = "entity"
+
+        classifications[tname] = {
+            "classification": classification,
+            "signals": signals,
+        }
+
+    return classifications
+
+
+def _classify_relationship(join_fields, join_type):
+    """Classify a collapsed relationship as true_erd/utility/uncertain."""
+    if join_type != "Equal" and "+" not in join_type:
+        return "utility"
+
+    # Check if join fields follow PK→FK pattern
+    pairs = join_fields.split("+") if "+" in join_fields else [join_fields]
+    pk_fk_count = 0
+    for pair in pairs:
+        if "=" not in pair:
+            continue
+        left_f, right_f = pair.split("=", 1)
+        left_lower = left_f.strip().lower()
+        right_lower = right_f.strip().lower()
+        # PK on one side, FK or id_ on the other
+        is_pk_fk = (
+            (left_lower in ("id", "primarykey") or left_lower.startswith("__kpt"))
+            or (right_lower in ("id", "primarykey") or right_lower.startswith("__kpt"))
+            or left_lower.startswith("id_") or right_lower.startswith("id_")
+            or left_lower.startswith("_kf") or right_lower.startswith("_kf")
+            or left_lower.startswith("foreignkey") or right_lower.startswith("foreignkey")
+        )
+        if is_pk_fk:
+            pk_fk_count += 1
+
+    if pk_fk_count == len(pairs) and pk_fk_count > 0:
+        return "true_erd"
+    elif pk_fk_count > 0:
+        return "uncertain"
+    return "utility"
+
+
+def _build_file_graph(solution_name, fields_index, to_index, relationships_index,
+                      is_data_file=False):
+    """Build a per-file relationship graph with optional ERD classification.
+
+    Returns a dict with tables, edges, classifications, and counts.
+    """
+    # Build TO→base_table map for this file
+    to_map = {row["to_name"]: row["base_table"] for row in to_index}
+
+    # Collapse relationships to base table edges with detail
+    seen = set()
+    edges = []
+    for r in relationships_index:
+        left_base = to_map.get(r["left_to"], "")
+        right_base = to_map.get(r["right_to"], "")
+        if not left_base or not right_base or left_base == right_base:
+            continue
+        pair = tuple(sorted([left_base, right_base]))
+        if pair in seen:
+            # Increment to_pairs count on existing edge
+            for e in edges:
+                if (e["left"], e["right"]) == pair:
+                    e["to_pairs"] += 1
+                    break
+            continue
+        seen.add(pair)
+
+        join_fields = r.get("join_fields", "")
+        join_type = r.get("join_type", "Equal")
+        erd_class = _classify_relationship(join_fields, join_type)
+
+        edges.append({
+            "left": pair[0],
+            "right": pair[1],
+            "join_fields": join_fields,
+            "join_type": join_type,
+            "cascade_create": r.get("cascade_create", "False") == "True",
+            "cascade_delete": r.get("cascade_delete", "False") == "True",
+            "erd_classification": erd_class,
+            "to_pairs": 1,
+        })
+
+    # Build table info
+    table_field_counts = collections.Counter()
+    for row in fields_index:
+        table_field_counts[row["table"]] += 1
+
+    tables = {}
+    for tname, fc in table_field_counts.items():
+        tables[tname] = {"field_count": fc}
+
+    # ERD classification for data files
+    table_classifications = None
+    if is_data_file and fields_index:
+        table_classifications = _classify_tables(
+            fields_index, relationships_index, to_index
+        )
+
+    result = {
+        "tables": tables,
+        "base_table_edges": edges,
+        "relationship_count": len(relationships_index),
+        "to_count": len(to_index),
+    }
+    if table_classifications is not None:
+        result["table_classifications"] = table_classifications
+
+    return result
+
+
+def build_per_file_graphs(solution_name, fields_index, to_index,
+                          relationships_index, multi_file_info, correlated_data):
+    """Build per-file relationship graphs for all files in a multi-file solution.
+
+    Returns a dict keyed by solution name with graph data for each file.
+    """
+    graphs = {}
+
+    # Primary file's own graph
+    primary_graph = _build_file_graph(
+        solution_name, fields_index, to_index, relationships_index,
+        is_data_file=False,
+    )
+    if primary_graph["relationship_count"] > 0:
+        graphs[solution_name] = primary_graph
+
+    # Correlated files
+    if correlated_data:
+        data_source_map = multi_file_info.get("data_source_map", {})
+        # Determine which correlated solutions are "data" files
+        data_file_names = set()
+        for f in multi_file_info.get("files", []):
+            if f.get("role") == "data":
+                data_file_names.add(f["name"])
+
+        for corr_name, corr_info in correlated_data.items():
+            corr_rels = corr_info.get("relationships_index", [])
+            if not corr_rels:
+                continue
+            is_data = corr_name in data_file_names
+            graph = _build_file_graph(
+                corr_name,
+                corr_info.get("fields_index", []),
+                corr_info.get("to_index", []),
+                corr_rels,
+                is_data_file=is_data,
+            )
+            if graph["relationship_count"] > 0:
+                graphs[corr_name] = graph
+
+    return graphs
+
+
+def _analyze_topology(to_index, relationships_index, to_map,
+                      layouts_index=None, ui_concentration=None):
+    """Analyze TO topology pattern.
+
+    Classifies the relationship graph management strategy using signals
+    documented in references/relationship-graph-topologies.md.
+
+    Patterns: anchor-buoy, star, tiered-hub, spider-web, flat, hybrid.
+    """
     if HAS_NETWORKX:
-        return _topology_networkx(to_index, relationships_index, to_map)
-    return _topology_basic(to_index, relationships_index, to_map)
+        return _topology_networkx(to_index, relationships_index, to_map,
+                                  layouts_index, ui_concentration)
+    return _topology_basic(to_index, relationships_index, to_map,
+                           layouts_index, ui_concentration)
 
 
-def _topology_basic(to_index, relationships_index, to_map):
+def _compute_layout_concentration(layouts_index, to_map):
+    """Compute how concentrated layouts are across TOs.
+
+    Returns a dict with:
+      - cover_50: how many TOs needed to cover 50% of layouts
+      - cover_50_pct: that number as a percentage of distinct layout TOs
+      - top_to_pct: what percentage of layouts use the single most-used TO
+      - distinct_layout_tos: count of TOs that serve as layout bases
+      - spread_ratio: cover_50 / distinct_layout_tos (low = concentrated)
+    """
+    if not layouts_index:
+        return None
+    layout_tos = collections.Counter(
+        r["base_to"] for r in layouts_index if r.get("base_to")
+    )
+    if not layout_tos:
+        return None
+
+    total = sum(layout_tos.values())
+    counts = sorted(layout_tos.values(), reverse=True)
+    distinct = len(counts)
+
+    running = 0
+    cover_50 = distinct
+    for i, c in enumerate(counts):
+        running += c
+        if running >= total * 0.5:
+            cover_50 = i + 1
+            break
+
+    top_to_pct = counts[0] / total if counts else 0
+
+    return {
+        "cover_50": cover_50,
+        "cover_50_pct": round(cover_50 / max(distinct, 1), 2),
+        "top_to_pct": round(top_to_pct, 2),
+        "distinct_layout_tos": distinct,
+        "spread_ratio": round(cover_50 / max(distinct, 1), 2),
+    }
+
+
+def _classify_topology(degrees, max_degree, hub_count, base_table_count,
+                       to_count, has_cartesian, layout_concentration=None):
+    """Apply multi-signal classification heuristics.
+
+    See references/relationship-graph-topologies.md for the full decision
+    matrix and signal definitions.
+    """
+    if not degrees:
+        return "unknown", 0.0
+
+    low_degree_pct = (
+        sum(1 for d in degrees if d <= 2) / len(degrees)
+    )
+    to_ratio = to_count / max(base_table_count, 1)
+
+    # Count hubs at a lower threshold too (degree >= 3) for sparser graphs
+    hub3_count = sum(1 for d in degrees if d >= 3)
+    hub3_ratio = hub3_count / max(base_table_count, 1)
+
+    hub_ratio = hub_count / max(base_table_count, 1)
+
+    # Layout concentration signals (when available)
+    # spread_ratio: low = layouts concentrated on few TOs (hub-centric)
+    #               high = layouts spread across many TOs (anchor-buoy)
+    layout_spread = None
+    if layout_concentration:
+        layout_spread = layout_concentration["spread_ratio"]
+
+    # Flat/Minimal: very few relationships, TOs ~ base tables
+    if max_degree < 5 and to_ratio < 2:
+        return "flat", round(1.0 - (max_degree / 5), 2)
+
+    # Spider-Web: dense, no clear hierarchy
+    if low_degree_pct < 0.4:
+        return "spider-web", round(1.0 - low_degree_pct, 2)
+
+    # Anchor-Buoy: high low_degree_pct, hubs proportional to base tables,
+    # AND layouts NOT dominated by a single TO (top_to_pct < 15%).
+    # In anchor-buoy, each entity has its own layouts — no single TO dominates.
+    top_to_low = True
+    if layout_concentration:
+        top_to_low = layout_concentration["top_to_pct"] < 0.15
+    if (low_degree_pct >= 0.8
+            and (hub_ratio >= 0.3 or hub3_ratio >= 0.4)
+            and to_ratio >= 2
+            and top_to_low):
+        return "anchor-buoy", round(low_degree_pct, 2)
+
+    # Tiered Hub: one or a few dominant TOs drive most of the UI (top_to_pct
+    # >= 15%), high max degree, many TOs per base table. The "single-page
+    # app" pattern — a primary entity with function-specific sub-hubs.
+    top_to_high = False
+    if layout_concentration:
+        top_to_high = layout_concentration["top_to_pct"] >= 0.12
+    if (low_degree_pct >= 0.6 and max_degree >= 10
+            and to_ratio >= 5
+            and (top_to_high or max_degree >= 20)):
+        return "tiered-hub", round(min(hub_ratio * 2, 0.95), 2)
+
+    # Star (Context-Hub): few centralized hubs managing many satellites.
+    # Hub count is much lower than base table count.
+    if (low_degree_pct >= 0.7 and hub_count >= 1
+            and hub_ratio < 0.2 and to_ratio >= 3):
+        conf = round(max_degree / (max_degree + 10), 2)
+        return "star", conf
+
+    # Anchor-Buoy (relaxed): sparser graphs where most connections are
+    # degree 2-4 but structurally one-hub-per-table, and layouts are spread
+    if (low_degree_pct >= 0.7 and hub3_ratio >= 0.3
+            and to_ratio >= 1.5 and top_to_low):
+        return "anchor-buoy", round(low_degree_pct * 0.8, 2)
+
+    # Hybrid: mixed signals
+    return "hybrid", 0.5
+
+
+def _topology_basic(to_index, relationships_index, to_map,
+                    layouts_index=None, ui_concentration=None):
     """Basic topology analysis without networkx."""
-    # Build adjacency: count connections per TO
     degree = collections.Counter()
+    has_cartesian = False
     for r in relationships_index:
         degree[r["left_to"]] += 1
         degree[r["right_to"]] += 1
+        if "CartesianProduct" in r.get("join_type", ""):
+            has_cartesian = True
 
     if not degree:
         return {"pattern": "unknown", "note": "no relationships found"}
@@ -402,33 +950,46 @@ def _topology_basic(to_index, relationships_index, to_map):
     avg_degree = sum(degrees) / len(degrees) if degrees else 0
     max_degree = max(degrees) if degrees else 0
     low_degree_pct = sum(1 for d in degrees if d <= 2) / len(degrees) if degrees else 0
-
-    # Heuristic: anchor-buoy has most TOs with degree 1-2 and a few hubs
     hub_count = sum(1 for d in degrees if d >= 5)
 
-    if low_degree_pct >= 0.7 and hub_count >= 1:
-        pattern = "anchor-buoy"
-    elif low_degree_pct < 0.4:
-        pattern = "spider-web"
-    else:
-        pattern = "hybrid"
+    base_table_count = len(set(to_map.values()))
 
-    return {
+    # Prefer UI-only concentration (from button-based classification)
+    # over raw layout concentration
+    layout_conc = ui_concentration
+    if not layout_conc:
+        layout_conc = _compute_layout_concentration(layouts_index, to_map)
+    pattern, confidence = _classify_topology(
+        degrees, max_degree, hub_count, base_table_count,
+        len(to_index), has_cartesian, layout_conc,
+    )
+
+    result = {
         "pattern": pattern,
+        "confidence": confidence,
         "avg_degree": round(avg_degree, 2),
         "max_degree": max_degree,
         "low_degree_pct": round(low_degree_pct, 2),
         "hub_count": hub_count,
+        "has_cartesian": has_cartesian,
     }
+    if layout_conc:
+        result["layout_concentration"] = layout_conc
+    return result
 
 
-def _topology_networkx(to_index, relationships_index, to_map):
+def _topology_networkx(to_index, relationships_index, to_map,
+                       layouts_index=None, ui_concentration=None):
     """Advanced topology analysis with networkx."""
     G = nx.Graph()
+    has_cartesian = False
     for row in to_index:
         G.add_node(row["to_name"], base_table=row["base_table"])
     for r in relationships_index:
-        G.add_edge(r["left_to"], r["right_to"], join_type=r["join_type"])
+        jt = r.get("join_type", "")
+        G.add_edge(r["left_to"], r["right_to"], join_type=jt)
+        if "CartesianProduct" in jt:
+            has_cartesian = True
 
     if G.number_of_nodes() == 0:
         return {"pattern": "unknown", "note": "no table occurrences found"}
@@ -439,30 +1000,34 @@ def _topology_networkx(to_index, relationships_index, to_map):
     low_degree_pct = sum(1 for d in degrees if d <= 2) / len(degrees) if degrees else 0
     hub_count = sum(1 for d in degrees if d >= 5)
 
+    base_table_count = len(set(to_map.values()))
+
+    layout_conc = ui_concentration
+    if not layout_conc:
+        layout_conc = _compute_layout_concentration(layouts_index, to_map)
+    pattern, confidence = _classify_topology(
+        degrees, max_degree, hub_count, base_table_count,
+        len(to_index), has_cartesian, layout_conc,
+    )
+
     # Connected components
     components = list(nx.connected_components(G))
 
-    # Identify anchor tables (hubs by base table)
+    # Identify anchor/hub tables (hubs by base table)
     hub_tos = [n for n, d in G.degree() if d >= 5]
     anchor_tables = sorted(set(to_map.get(t, t) for t in hub_tos))
-
-    if low_degree_pct >= 0.7 and hub_count >= 1:
-        pattern = "anchor-buoy"
-    elif low_degree_pct < 0.4:
-        pattern = "spider-web"
-    else:
-        pattern = "hybrid"
 
     # Bridge edges (whose removal disconnects the graph)
     bridges = list(nx.bridges(G))
 
-    return {
+    result = {
         "pattern": pattern,
-        "confidence": round(low_degree_pct if pattern == "anchor-buoy" else 1 - low_degree_pct, 2),
+        "confidence": confidence,
         "avg_degree": round(avg_degree, 2),
         "max_degree": max_degree,
         "low_degree_pct": round(low_degree_pct, 2),
         "hub_count": hub_count,
+        "has_cartesian": has_cartesian,
         "anchor_tables": anchor_tables,
         "connected_components": len(components),
         "isolated_components": [
@@ -471,6 +1036,9 @@ def _topology_networkx(to_index, relationships_index, to_map):
         "bridge_count": len(bridges),
         "method": "networkx",
     }
+    if layout_conc:
+        result["layout_concentration"] = layout_conc
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -510,7 +1078,7 @@ def detect_naming_conventions(fields_index):
 
 
 # ---------------------------------------------------------------------------
-# Script analysis
+# Script file cache
 # ---------------------------------------------------------------------------
 
 def find_script_files(solution_name):
@@ -521,13 +1089,66 @@ def find_script_files(solution_name):
     return sorted(scripts_dir.rglob("*.txt"))
 
 
+def load_script_cache(solution_name, scripts_index):
+    """Load all script files once. Returns list of dicts (preserving per-file iteration).
+
+    Each entry: {"name": str, "path": Path, "text": str, "lines": list,
+                 "line_count": int, "is_empty": bool, "calls": list,
+                 "layout_refs": list, "has_insert_from_url": bool,
+                 "has_send_mail": bool, "has_export_records": bool,
+                 "has_import_records": bool}
+    """
+    scripts_by_id = {s["id"]: s for s in scripts_index}
+    script_files = find_script_files(solution_name)
+    cache = []
+
+    for script_path in script_files:
+        # Resolve script name
+        script_id = extract_script_id_from_filename(script_path.name)
+        if script_id and script_id in scripts_by_id:
+            script_name = scripts_by_id[script_id]["name"]
+        else:
+            script_name = script_path.stem.rsplit(" - ID ", 1)[0]
+
+        try:
+            with open(script_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        lines = text.strip().split("\n")
+        non_empty_lines = [l for l in lines if l.strip()]
+
+        cache.append({
+            "name": script_name,
+            "path": script_path,
+            "text": text,
+            "lines": lines,
+            "line_count": len(lines),
+            "is_empty": len(non_empty_lines) == 0,
+            "calls": RE_PERFORM_SCRIPT.findall(text),
+            "layout_refs": RE_LAYOUT_REF.findall(text),
+            "has_insert_from_url": bool(RE_INSERT_FROM_URL.search(text)),
+            "has_send_mail": bool(RE_SEND_MAIL.search(text)),
+            "has_export_records": bool(RE_EXPORT_RECORDS.search(text)),
+            "has_import_records": bool(RE_IMPORT_RECORDS.search(text)),
+        })
+
+    return cache
+
+
+# ---------------------------------------------------------------------------
+# Script analysis
+# ---------------------------------------------------------------------------
+
+
 def extract_script_id_from_filename(filename):
     """Extract script ID from filename like 'Contact - Navigate To - ID 71.txt'."""
     match = re.search(r'ID (\d+)\.txt$', filename)
     return match.group(1) if match else None
 
 
-def analyze_scripts(solution_name, scripts_index, deep=False):
+def analyze_scripts(solution_name, scripts_index, script_cache, deep=False):
     """Analyze scripts: inventory, call chains, and optionally deep metrics."""
     # Build inventory from index
     scripts_by_id = {s["id"]: s for s in scripts_index}
@@ -544,10 +1165,9 @@ def analyze_scripts(solution_name, scripts_index, deep=False):
         for folder, names in sorted(by_folder.items())
     }
 
-    # --- Call chain extraction from sanitized scripts ---
+    # --- Call chain extraction from cached scripts ---
     call_graph = {}  # script_name -> [called_script_names]
     script_line_counts = {}
-    script_files = find_script_files(solution_name)
 
     # Deep mode accumulators
     deep_metrics = None
@@ -560,27 +1180,14 @@ def analyze_scripts(solution_name, scripts_index, deep=False):
             "nesting": {"max_depth": 0, "avg_depth": 0, "depths": []},
         }
 
-    for script_path in script_files:
-        script_id = extract_script_id_from_filename(script_path.name)
-        # Find script name from index
-        script_name = None
-        if script_id and script_id in scripts_by_id:
-            script_name = scripts_by_id[script_id]["name"]
-        else:
-            # Fallback: derive from filename
-            script_name = script_path.stem.rsplit(" - ID ", 1)[0]
+    for info in script_cache:
+        script_name = info["name"]
+        text = info["text"]
+        lines = info["lines"]
+        script_line_counts[script_name] = info["line_count"]
 
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                text = f.read()
-        except (OSError, UnicodeDecodeError):
-            continue
-
-        lines = text.strip().split("\n")
-        script_line_counts[script_name] = len(lines)
-
-        # Extract Perform Script calls
-        calls = RE_PERFORM_SCRIPT.findall(text)
+        # Extract Perform Script calls (pre-computed in cache)
+        calls = info["calls"]
         if calls:
             call_graph[script_name] = calls
 
@@ -669,7 +1276,7 @@ def analyze_scripts(solution_name, scripts_index, deep=False):
 
     result = {
         "total_scripts": len(scripts_index),
-        "total_files_analyzed": len(script_files),
+        "total_files_analyzed": len(script_cache),
         "folders": folder_tree,
         "call_graph_edges": sum(len(v) for v in call_graph.values()),
         "call_graph": [
@@ -817,26 +1424,23 @@ def analyze_custom_functions(solution_name):
     functions = {}
     all_cf_names = set()
 
-    # First pass: collect names
+    # First pass: collect names and read all content
+    cf_data = []  # (name, id, text) — single pass I/O
     for cf_path in cf_files:
-        # Filename: "FunctionName - ID 123.txt"
         name = cf_path.stem.rsplit(" - ID ", 1)[0]
         all_cf_names.add(name)
-
-    # Second pass: analyze dependencies
-    for cf_path in cf_files:
-        name = cf_path.stem.rsplit(" - ID ", 1)[0]
         cf_id = None
         id_match = re.search(r'ID (\d+)$', cf_path.stem)
         if id_match:
             cf_id = id_match.group(1)
-
         try:
             with open(cf_path, "r", encoding="utf-8") as f:
                 text = f.read()
         except (OSError, UnicodeDecodeError):
             continue
+        cf_data.append((name, cf_id, text))
 
+    for name, cf_id, text in cf_data:
         # Count parameters (look for function signature pattern)
         param_match = re.match(r'^(\w+)\s*\((.*?)\)', text, re.DOTALL)
         param_count = 0
@@ -845,11 +1449,11 @@ def analyze_custom_functions(solution_name):
             if params:
                 param_count = len([p.strip() for p in params.split(";") if p.strip()])
 
-        # Find references to other custom functions
-        deps = []
-        for other_name in all_cf_names:
-            if other_name != name and other_name in text:
-                deps.append(other_name)
+        # Find references to other custom functions (substring match)
+        deps = sorted(
+            other_name for other_name in all_cf_names
+            if other_name != name and other_name in text
+        )
 
         line_count = len(text.strip().split("\n"))
 
@@ -880,20 +1484,29 @@ def analyze_custom_functions(solution_name):
 
 
 def _find_cf_chains(functions):
-    """Find the longest dependency chains in custom functions."""
+    """Find the longest dependency chains in custom functions.
+
+    Uses memoized DFS with cycle detection instead of exponential visited.copy().
+    """
     if not functions:
         return []
 
-    def _chain_depth(name, visited=None):
-        if visited is None:
-            visited = set()
-        if name in visited or name not in functions:
+    PENDING = -1  # Sentinel: currently being computed (cycle detection)
+    memo = {}  # name -> depth (memoized result)
+
+    def _chain_depth(name):
+        if name in memo:
+            return max(memo[name], 0)  # PENDING (-1) -> 0
+        if name not in functions:
             return 0
-        visited.add(name)
+        memo[name] = PENDING  # Mark as in-progress
         deps = functions[name].get("dependencies", [])
         if not deps:
+            memo[name] = 1
             return 1
-        return 1 + max(_chain_depth(d, visited.copy()) for d in deps)
+        depth = 1 + max(_chain_depth(d) for d in deps)
+        memo[name] = depth
+        return depth
 
     chains = [(name, _chain_depth(name)) for name in functions]
     chains.sort(key=lambda x: x[1], reverse=True)
@@ -904,7 +1517,8 @@ def _find_cf_chains(functions):
 # Layout analysis
 # ---------------------------------------------------------------------------
 
-def analyze_layouts(solution_name, solution_dir, layouts_index, scripts_index):
+def analyze_layouts(solution_name, solution_dir, layouts_index, scripts_index,
+                    script_cache=None):
     """Analyze layouts: inventory, classification, portal usage."""
     # Organize by base TO
     by_base_to = collections.defaultdict(list)
@@ -958,14 +1572,19 @@ def analyze_layouts(solution_name, solution_dir, layouts_index, scripts_index):
 
     # Detect orphaned layouts (not referenced by any script)
     script_referenced_layouts = set()
-    for script_path in find_script_files(solution_name):
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                text = f.read()
-            for match in RE_LAYOUT_REF.findall(text):
-                script_referenced_layouts.add(match)
-        except (OSError, UnicodeDecodeError):
-            continue
+    if script_cache is not None:
+        for info in script_cache:
+            for ref in info["layout_refs"]:
+                script_referenced_layouts.add(ref)
+    else:
+        for script_path in find_script_files(solution_name):
+            try:
+                with open(script_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                for match in RE_LAYOUT_REF.findall(text):
+                    script_referenced_layouts.add(match)
+            except (OSError, UnicodeDecodeError):
+                continue
 
     layout_names = set(l["name"] for l in layouts_index)
     orphaned = sorted(layout_names - script_referenced_layouts)
@@ -980,6 +1599,237 @@ def analyze_layouts(solution_name, solution_dir, layouts_index, scripts_index):
         "orphaned_layouts": orphaned,
         "has_layout_summaries": layout_summaries_dir.exists()
             and any(layout_summaries_dir.glob("*.json")),
+    }
+
+
+_BUILTIN_LAYOUT_SIGNALS = {
+    "developer_prefixes": ["@"],
+    "utility_prefixes": ["blank ", "json ", "api "],
+    "utility_names": ["vlist"],
+    "output_suffixes": ["pdf"],
+    "output_names": [],
+    "output_patterns": ["print", "report", "scorecard", "hardcopy",
+                        "compass", "double", "single", "ladder",
+                        "round robin", "face-off"],
+    "ignore_names": [],
+    "dual_purpose_button_threshold": 10,
+}
+
+
+def _load_layout_signals():
+    """Load layout classification signals from config files.
+
+    Priority: layout-signals.json (override) > layout-signals.json.example
+    (shipped defaults) > _BUILTIN_LAYOUT_SIGNALS (hardcoded fallback).
+
+    The builtin fallback ensures classification works even if both config
+    files are missing or corrupt.
+    """
+    config_dir = PROJECT_ROOT / "agent" / "config"
+    result = dict(_BUILTIN_LAYOUT_SIGNALS)
+
+    # Layer 1: shipped defaults from .example file
+    example_path = config_dir / "layout-signals.json.example"
+    if example_path.exists():
+        try:
+            with open(example_path, "r", encoding="utf-8") as f:
+                example = json.load(f)
+            result.update({k: v for k, v in example.items()
+                           if not k.startswith("_")})
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Layer 2: developer overrides from .json file
+    override_path = config_dir / "layout-signals.json"
+    if override_path.exists():
+        try:
+            with open(override_path, "r", encoding="utf-8") as f:
+                overrides = json.load(f)
+            result.update({k: v for k, v in overrides.items()
+                           if not k.startswith("_")})
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return result
+
+
+def _classify_layout_purpose(layout_name, button_count, folder_path="",
+                             has_pdf_script=False, signals=None):
+    """Classify a layout's purpose as ui/output/utility/developer.
+
+    Uses the decision tree from references/layout-classifications.md.
+    All convention-dependent signals come from layout-signals.json.example
+    (defaults) overlaid by layout-signals.json (overrides). The button
+    count signal is always applied as a structural fallback.
+    """
+    name_lower = layout_name.lower()
+
+    # Extract signals (all from config, no hardcoded defaults)
+    dev_prefixes = [p.lower() for p in (signals or {}).get("developer_prefixes", [])]
+    util_prefixes = [p.lower() for p in (signals or {}).get("utility_prefixes", [])]
+    util_names = {n.lower() for n in (signals or {}).get("utility_names", [])}
+    out_suffixes = [s.lower() for s in (signals or {}).get("output_suffixes", [])]
+    out_names = {n.lower() for n in (signals or {}).get("output_names", [])}
+    out_patterns = [p.lower() for p in (signals or {}).get("output_patterns", [])]
+    ignore_names = {n.lower() for n in (signals or {}).get("ignore_names", [])}
+    dual_threshold = (signals or {}).get("dual_purpose_button_threshold", 10)
+
+    # 0. Ignored layouts
+    if name_lower in ignore_names:
+        return "utility"
+
+    # 1. Developer prefix
+    for prefix in dev_prefixes:
+        if name_lower.startswith(prefix):
+            return "developer"
+
+    # 2. Utility prefix/name
+    for prefix in util_prefixes:
+        if name_lower.startswith(prefix):
+            return "utility"
+    if name_lower in util_names:
+        return "utility"
+
+    # 3-6. Output detection with dual-purpose awareness
+    is_output = False
+
+    if has_pdf_script:
+        is_output = True
+
+    if not is_output:
+        for suffix in out_suffixes:
+            if name_lower.endswith(suffix):
+                is_output = True
+                break
+    if not is_output and name_lower in out_names:
+        is_output = True
+    if not is_output:
+        for pat in out_patterns:
+            if pat in name_lower:
+                is_output = True
+                break
+
+    if is_output:
+        if button_count >= dual_threshold:
+            return "output/ui"
+        return "output"
+
+    # 7-8. Button count threshold (universal, not convention-dependent)
+    if button_count >= 2:
+        return "ui"
+
+    return "utility"
+
+
+def _count_layout_buttons(solution_name):
+    """Count <Button> elements in each layout XML file.
+
+    Returns a dict of {layout_name: button_count}.
+    """
+    import xml.etree.ElementTree as ET
+
+    layout_dir = XML_PARSED_DIR / "layouts" / solution_name
+    counts = {}
+    if not layout_dir.exists():
+        return counts
+
+    for xml_path in layout_dir.rglob("*.xml"):
+        name = xml_path.stem.rsplit(" - ID ", 1)[0]
+        try:
+            tree = ET.parse(str(xml_path))
+            root = tree.getroot()
+            counts[name] = len(list(root.iter("Button")))
+        except ET.ParseError:
+            counts[name] = 0
+
+    return counts
+
+
+def _find_pdf_layouts(script_cache):
+    """Find layouts referenced by scripts that use Save Records as PDF.
+
+    Returns a set of layout names.
+    """
+    pdf_layouts = set()
+    if not script_cache:
+        return pdf_layouts
+
+    re_pdf = re.compile(r"Save Records as PDF", re.IGNORECASE)
+    re_goto = re.compile(
+        r'Go to Layout\s*\[\s*"([^"]+)"', re.IGNORECASE
+    )
+    for info in script_cache:
+        text = info.get("text", "")
+        if re_pdf.search(text):
+            for match in re_goto.findall(text):
+                pdf_layouts.add(match)
+    return pdf_layouts
+
+
+def classify_layouts(solution_name, layouts_index, script_cache=None):
+    """Classify all layouts by purpose (ui/output/utility/developer).
+
+    Loads convention-dependent signals from agent/config/layout-signals.json
+    when present, otherwise uses defaults. The button count signal is always
+    applied as a structural fallback.
+
+    Returns a dict with:
+      - by_purpose: {purpose: count}
+      - layouts: [{name, purpose, button_count}, ...]
+      - ui_concentration: layout concentration computed from UI layouts only
+    """
+    button_counts = _count_layout_buttons(solution_name)
+    pdf_layouts = _find_pdf_layouts(script_cache)
+    signals = _load_layout_signals()
+
+    classified = []
+    by_purpose = collections.Counter()
+
+    for layout in layouts_index:
+        name = layout["name"]
+        bc = button_counts.get(name, 0)
+        folder = layout.get("folder", "")
+        has_pdf = name in pdf_layouts
+
+        purpose = _classify_layout_purpose(name, bc, folder, has_pdf, signals)
+        by_purpose[purpose] += 1
+        classified.append({
+            "name": name,
+            "purpose": purpose,
+            "button_count": bc,
+            "base_to": layout.get("base_to", ""),
+        })
+
+    # Compute UI-only layout concentration
+    # Include output/ui (dual-purpose) in UI concentration — they are user-facing
+    ui_layouts = [c for c in classified if c["purpose"] in ("ui", "output/ui")]
+    ui_by_to = collections.Counter(c["base_to"] for c in ui_layouts if c["base_to"])
+    ui_concentration = None
+    if ui_by_to:
+        total_ui = sum(ui_by_to.values())
+        sorted_counts = sorted(ui_by_to.values(), reverse=True)
+        top_to_pct = sorted_counts[0] / total_ui if sorted_counts else 0
+
+        cover_50 = len(sorted_counts)
+        running = 0
+        for i, c in enumerate(sorted_counts):
+            running += c
+            if running >= total_ui * 0.5:
+                cover_50 = i + 1
+                break
+
+        ui_concentration = {
+            "total_ui": total_ui,
+            "distinct_ui_tos": len(ui_by_to),
+            "top_to_pct": round(top_to_pct, 2),
+            "cover_50": cover_50,
+            "spread_ratio": round(cover_50 / max(len(ui_by_to), 1), 2),
+        }
+
+    return {
+        "by_purpose": dict(by_purpose),
+        "layouts": classified,
+        "ui_concentration": ui_concentration,
     }
 
 
@@ -1014,7 +1864,8 @@ def _walk_layout_objects(obj, layout_name, portal_usage, button_wiring, field_co
 # Integration points
 # ---------------------------------------------------------------------------
 
-def analyze_integrations(solution_name, value_lists_index, scripts_index):
+def analyze_integrations(solution_name, value_lists_index, scripts_index,
+                        script_cache=None):
     """Analyze external data sources, value lists, and external script calls."""
     # External data sources
     eds_dir = XML_PARSED_DIR / "external_data_sources" / solution_name
@@ -1026,24 +1877,36 @@ def analyze_integrations(solution_name, value_lists_index, scripts_index):
     # Value lists
     vl_by_source = collections.Counter(vl["source_type"] for vl in value_lists_index)
 
-    # External calls from scripts (lightweight grep)
+    # External calls from scripts (use cache if available)
     external_call_scripts = collections.defaultdict(list)
-    for script_path in find_script_files(solution_name):
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                text = f.read()
-        except (OSError, UnicodeDecodeError):
-            continue
+    if script_cache is not None:
+        for info in script_cache:
+            script_name = info["name"]
+            for flag, label in [
+                ("has_insert_from_url", "Insert from URL"),
+                ("has_send_mail", "Send Mail"),
+                ("has_export_records", "Export Records"),
+                ("has_import_records", "Import Records"),
+            ]:
+                if info[flag]:
+                    external_call_scripts[label].append(script_name)
+    else:
+        for script_path in find_script_files(solution_name):
+            try:
+                with open(script_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+            except (OSError, UnicodeDecodeError):
+                continue
 
-        script_name = script_path.stem.rsplit(" - ID ", 1)[0]
-        for pattern, label in [
-            (RE_INSERT_FROM_URL, "Insert from URL"),
-            (RE_SEND_MAIL, "Send Mail"),
-            (RE_EXPORT_RECORDS, "Export Records"),
-            (RE_IMPORT_RECORDS, "Import Records"),
-        ]:
-            if pattern.search(text):
-                external_call_scripts[label].append(script_name)
+            script_name = script_path.stem.rsplit(" - ID ", 1)[0]
+            for pattern, label in [
+                (RE_INSERT_FROM_URL, "Insert from URL"),
+                (RE_SEND_MAIL, "Send Mail"),
+                (RE_EXPORT_RECORDS, "Export Records"),
+                (RE_IMPORT_RECORDS, "Import Records"),
+            ]:
+                if pattern.search(text):
+                    external_call_scripts[label].append(script_name)
 
     return {
         "external_data_sources": external_sources,
@@ -1062,42 +1925,278 @@ def analyze_integrations(solution_name, value_lists_index, scripts_index):
 # Multi-file solution detection
 # ---------------------------------------------------------------------------
 
-def detect_multi_file(solution_name):
-    """Detect if this solution references other FM files."""
+def _extract_filenames_from_path(path_str):
+    """Extract FM filenames from a UniversalPathList value.
+
+    Parses file: and fmnet: entries, strips .fmp12 extensions.
+    Skips variable references ($$VAR, $var).
+    Returns a set of candidate filenames.
+    """
+    filenames = set()
+    for line in path_str.replace("\r", "\n").split("\n"):
+        part = line.strip()
+        if not part or part.startswith("$"):
+            continue
+        # file:Name or file:Name.fmp12
+        m = re.match(r"file:(.+?)(?:\.fmp12)?$", part)
+        if m:
+            filenames.add(m.group(1))
+            continue
+        # fmnet:/host/Name or fmnet:/host/Name.fmp12
+        m = re.match(r"fmnet:/[^/]+/(.+?)(?:\.fmp12)?$", part)
+        if m:
+            filenames.add(m.group(1))
+    return filenames
+
+
+def detect_multi_file(solution_name, to_index=None):
+    """Detect if this solution references other FM files.
+
+    Uses a multi-level resolution strategy to map external data source names
+    to correlated solution names:
+
+    Level 1 — Literal path resolution: Parse UniversalPathList for file:/fmnet:
+              entries and match the extracted filename against available solutions.
+              Deterministic, no heuristics.
+
+    Level 2 — Base table overlap: For EDS entries with variable-based paths,
+              compare the external TOs grouped by that data source against each
+              candidate solution's local base tables. Highest overlap wins.
+
+    Returns a dict with multi-file metadata including data_source_map
+    (mapping EDS names to correlated solution names) and file_architecture.
+    """
     eds_dir = XML_PARSED_DIR / "external_data_sources" / solution_name
     if not eds_dir.exists():
-        return {"is_multi_file": False}
+        return {
+            "is_multi_file": False,
+            "file_architecture": "single",
+        }
 
     import xml.etree.ElementTree as ET
 
-    references = []
+    # Parse external data source XML files
+    data_sources = []  # list of {name, id, type, path, filenames, has_variable}
     for xml_path in sorted(eds_dir.glob("*.xml")):
         try:
             tree = ET.parse(str(xml_path))
             root = tree.getroot()
-            # Look for file references
-            for ds in root.iter("FileReference"):
-                name = ds.get("name", xml_path.stem)
-                references.append(name)
-            if not references:
-                references.append(xml_path.stem)
+            ds_name = root.get("name", xml_path.stem.split(" - ")[0])
+            ds_id = root.get("id", "")
+            ds_type = root.get("type", "")
+            path_el = root.find(".//UniversalPathList")
+            ds_path = path_el.text.strip() if path_el is not None and path_el.text else ""
+            filenames = _extract_filenames_from_path(ds_path)
+            has_variable = any(
+                p.strip().startswith("$")
+                for p in ds_path.replace("\r", "\n").split("\n")
+                if p.strip()
+            )
+            data_sources.append({
+                "name": ds_name,
+                "id": ds_id,
+                "type": ds_type,
+                "path": ds_path,
+                "filenames": sorted(filenames),
+                "has_variable": has_variable,
+            })
         except ET.ParseError:
-            references.append(xml_path.stem)
+            data_sources.append({
+                "name": xml_path.stem.split(" - ")[0],
+                "id": "",
+                "type": "",
+                "path": "",
+                "filenames": [],
+                "has_variable": False,
+            })
 
-    # Check if referenced files also exist in xml_parsed
+    referenced_files = [ds["name"] for ds in data_sources]
+
+    # Find all solutions that have been exploded and indexed
     all_solutions = set()
     for domain_dir in XML_PARSED_DIR.iterdir():
         if domain_dir.is_dir() and domain_dir.name != "_":
             for sol_dir in domain_dir.iterdir():
                 if sol_dir.is_dir():
                     all_solutions.add(sol_dir.name)
+    all_solutions.discard(solution_name)  # exclude self
 
-    correlated = [ref for ref in references if ref in all_solutions]
+    available_solutions = {s for s in all_solutions
+                           if (CONTEXT_DIR / s).exists()}
+
+    # ---------------------------------------------------------------
+    # Level 1: Literal path resolution
+    # Match extracted filenames from UniversalPathList against available
+    # solutions. This is deterministic — no heuristics needed.
+    # ---------------------------------------------------------------
+    data_source_map = {}
+    unresolved_ds = []  # EDS entries that need Level 2 fallback
+
+    for ds in data_sources:
+        matched = False
+        for fname in ds["filenames"]:
+            if fname in available_solutions:
+                data_source_map[ds["name"]] = fname
+                matched = True
+                break
+        if not matched and ds["has_variable"]:
+            # Variable-based path with no literal fallback — needs Level 2
+            unresolved_ds.append(ds["name"])
+
+    # ---------------------------------------------------------------
+    # Level 2: Base table overlap (fallback for variable-based paths)
+    # For unresolved EDS entries, compare their external TOs' base tables
+    # against candidate solutions' local base tables.
+    # ---------------------------------------------------------------
+    if unresolved_ds and to_index and available_solutions:
+        # Group external TOs by data source, collecting their base tables
+        ds_base_tables = collections.defaultdict(set)
+        for row in to_index:
+            if (row.get("type") == "External"
+                    and row.get("data_source") in unresolved_ds):
+                ds_base_tables[row["data_source"]].add(row["base_table"])
+
+        if ds_base_tables:
+            # Only load candidates not already resolved by Level 1
+            already_mapped = set(data_source_map.values())
+            candidates = available_solutions - already_mapped
+
+            corr_local_tables = {}
+            for corr_name in candidates:
+                corr_to = load_table_occurrences_index(CONTEXT_DIR / corr_name)
+                local_tables = set()
+                for row in corr_to:
+                    if row.get("type", "") in ("Local", ""):
+                        local_tables.add(row["base_table"])
+                corr_fields = load_fields_index(CONTEXT_DIR / corr_name)
+                for row in corr_fields:
+                    local_tables.add(row["table"])
+                corr_local_tables[corr_name] = local_tables
+
+            # Match: data source -> candidate with highest table overlap
+            for ds_name, ds_tables in ds_base_tables.items():
+                best_match = None
+                best_overlap = 0
+                for corr_name, corr_tables in corr_local_tables.items():
+                    overlap = len(ds_tables & corr_tables)
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_match = corr_name
+                if best_match and best_overlap > 0:
+                    data_source_map[ds_name] = best_match
+
+    # Narrow correlated list to only solutions actually mapped
+    correlated = sorted(set(data_source_map.values()))
+
+    # Determine file architecture
+    file_architecture = "single"
+    if data_source_map:
+        # Count external vs local TOs
+        external_count = sum(
+            1 for row in (to_index or []) if row.get("type") == "External"
+        )
+        local_count = sum(
+            1 for row in (to_index or []) if row.get("type") == "Local"
+        )
+        total = external_count + local_count
+        if total > 0 and external_count / total > 0.5:
+            file_architecture = "data_separation"
+        else:
+            file_architecture = "multi_file"
+    elif len(referenced_files) > 0:
+        file_architecture = "multi_file"
+
+    # Build per-file summary
+    files = []
+    if to_index:
+        local_tables = set()
+        external_to_count = 0
+        local_to_count = 0
+        for row in to_index:
+            if row.get("type") == "Local":
+                local_to_count += 1
+                local_tables.add(row["base_table"])
+            elif row.get("type") == "External":
+                external_to_count += 1
+
+        role = "ui" if file_architecture == "data_separation" else "primary"
+        files.append({
+            "name": solution_name,
+            "role": role,
+            "local_table_count": len(local_tables),
+            "local_to_count": local_to_count,
+            "external_to_count": external_to_count,
+        })
+
+        # Add correlated solution summaries
+        for corr_name in sorted(data_source_map.values()):
+            corr_to = load_table_occurrences_index(CONTEXT_DIR / corr_name)
+            corr_local_tables = set()
+            corr_local_to = 0
+            corr_ext_to = 0
+            for row in corr_to:
+                if row.get("type", "") in ("Local", ""):
+                    corr_local_to += 1
+                    corr_local_tables.add(row["base_table"])
+                elif row.get("type") == "External":
+                    corr_ext_to += 1
+
+            corr_role = "data" if file_architecture == "data_separation" else "secondary"
+            files.append({
+                "name": corr_name,
+                "role": corr_role,
+                "local_table_count": len(corr_local_tables),
+                "local_to_count": corr_local_to,
+                "external_to_count": corr_ext_to,
+            })
 
     return {
-        "is_multi_file": len(references) > 0,
-        "referenced_files": references,
+        "is_multi_file": len(referenced_files) > 0,
+        "file_architecture": file_architecture,
+        "referenced_files": referenced_files,
         "correlated_solutions": correlated,
+        "data_source_map": data_source_map,
+        "data_sources": data_sources,
+        "files": files,
+    }
+
+
+def load_correlated_tables(correlated_solution):
+    """Load index data from a correlated solution to identify table ownership.
+
+    Returns a dict with the solution's local base tables and field/TO data,
+    or None if the context directory doesn't exist.
+    """
+    correlated_dir = CONTEXT_DIR / correlated_solution
+    if not correlated_dir.exists():
+        return None
+
+    fields = load_fields_index(correlated_dir)
+    tos = load_table_occurrences_index(correlated_dir)
+
+    # Determine which base tables are locally defined in this file
+    local_tables = set()
+    for row in tos:
+        if row.get("type", "") in ("Local", ""):
+            local_tables.add(row["base_table"])
+
+    # Fields index is ground truth for which tables actually exist in the file
+    tables_from_fields = set(row["table"] for row in fields)
+
+    # Build table->field_count map for correlated tables
+    table_field_counts = collections.Counter()
+    for row in fields:
+        table_field_counts[row["table"]] += 1
+
+    relationships = load_relationships_index(correlated_dir)
+
+    return {
+        "solution": correlated_solution,
+        "local_tables": local_tables | tables_from_fields,
+        "table_field_counts": dict(table_field_counts),
+        "to_index": tos,
+        "fields_index": fields,
+        "relationships_index": relationships,
     }
 
 
@@ -1106,7 +2205,7 @@ def detect_multi_file(solution_name):
 # ---------------------------------------------------------------------------
 
 def analyze_health(solution_dir, fields_index, scripts_index, layouts_index,
-                   relationships_index, to_index):
+                   relationships_index, to_index, script_cache=None):
     """Compute health metrics from xref and index data."""
     xref = load_xref_index(solution_dir)
 
@@ -1157,15 +2256,20 @@ def analyze_health(solution_dir, fields_index, scripts_index, layouts_index,
 
     # Empty scripts (0-1 lines)
     empty_scripts = []
-    for script_path in find_script_files(solution_dir.name):
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                lines = [l for l in f.read().strip().split("\n") if l.strip()]
-            if len(lines) == 0:
-                name = script_path.stem.rsplit(" - ID ", 1)[0]
-                empty_scripts.append(name)
-        except (OSError, UnicodeDecodeError):
-            continue
+    if script_cache is not None:
+        for info in script_cache:
+            if info["is_empty"]:
+                empty_scripts.append(info["name"])
+    else:
+        for script_path in find_script_files(solution_dir.name):
+            try:
+                with open(script_path, "r", encoding="utf-8") as f:
+                    lines = [l for l in f.read().strip().split("\n") if l.strip()]
+                if len(lines) == 0:
+                    name = script_path.stem.rsplit(" - ID ", 1)[0]
+                    empty_scripts.append(name)
+            except (OSError, UnicodeDecodeError):
+                continue
 
     result.update({
         "dead_fields": {
@@ -1232,8 +2336,19 @@ def ensure_prerequisites(solution_name, solution_dir):
 # Profile assembly
 # ---------------------------------------------------------------------------
 
-def build_profile(solution_name, deep=False):
-    """Build the complete solution profile."""
+def build_profile(solution_name, deep=False, correlated_solutions=None):
+    """Build the complete solution profile.
+
+    Args:
+        solution_name: Name of the primary solution to analyze.
+        deep: Enable full script text analysis.
+        correlated_solutions: Explicit list of correlated solution names for
+            multi-file analysis. If None, auto-detects from external data sources.
+    """
+    global _T0
+    _T0 = time.monotonic()
+    phase_times = {}
+
     solution_dir = CONTEXT_DIR / solution_name
 
     if not solution_dir.exists():
@@ -1241,47 +2356,149 @@ def build_profile(solution_name, deep=False):
         print(f"  Expected: {solution_dir}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"==> Analyzing solution: {solution_name}")
+    _status("init", "info", label=f"==> Analyzing solution: {solution_name}")
 
     # Load all index files
+    t = time.monotonic()
     fields_index = load_fields_index(solution_dir)
     relationships_index = load_relationships_index(solution_dir)
     to_index = load_table_occurrences_index(solution_dir)
     scripts_index = load_scripts_index(solution_dir)
     layouts_index = load_layouts_index(solution_dir)
     value_lists_index = load_value_lists_index(solution_dir)
+    phase_times["index_loading"] = round(time.monotonic() - t, 4)
 
-    print(f"  Loaded: {len(fields_index)} fields, {len(to_index)} TOs, "
-          f"{len(scripts_index)} scripts, {len(layouts_index)} layouts, "
-          f"{len(relationships_index)} relationships, {len(value_lists_index)} value lists")
+    _status("loading", "info",
+            label=f"  Loaded: {len(fields_index)} fields, {len(to_index)} TOs, "
+                  f"{len(scripts_index)} scripts, {len(layouts_index)} layouts, "
+                  f"{len(relationships_index)} relationships, "
+                  f"{len(value_lists_index)} value lists")
+
+    # Load script cache once (eliminates 3x redundant file reads)
+    _status("script_cache", "start", label="Loading script files...")
+    t = time.monotonic()
+    script_cache = load_script_cache(solution_name, scripts_index)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["script_cache"] = dt
+    _status("script_cache", "end", elapsed=dt, items=len(script_cache))
+
+    # Detect multi-file references early (needed for data model analysis)
+    _status("multi_file", "start", label="Detecting multi-file references...")
+    t = time.monotonic()
+    multi_file = detect_multi_file(solution_name, to_index=to_index)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["multi_file"] = dt
+    _status("multi_file", "end", elapsed=dt)
+
+    # Load correlated solution data for cross-file attribution
+    correlated_data = {}
+    if correlated_solutions is not None:
+        resolved = correlated_solutions
+    else:
+        resolved = multi_file.get("correlated_solutions", [])
+
+    if resolved:
+        _status("correlated", "start",
+                label=f"Loading correlated solutions: {', '.join(resolved)}")
+        t = time.monotonic()
+        for corr_name in resolved:
+            corr_data = load_correlated_tables(corr_name)
+            if corr_data:
+                correlated_data[corr_name] = corr_data
+        dt = round(time.monotonic() - t, 4)
+        phase_times["correlated"] = dt
+        _status("correlated", "end", elapsed=dt, items=len(correlated_data))
+
+    # Classify layouts early (needed for topology signal in data_model)
+    _status("layout_classification", "start",
+            label="Classifying layouts (button analysis)...")
+    t = time.monotonic()
+    layout_classification = classify_layouts(
+        solution_name, layouts_index, script_cache=script_cache,
+    )
+    dt = round(time.monotonic() - t, 4)
+    phase_times["layout_classification"] = dt
+    _status("layout_classification", "end", elapsed=dt)
 
     # Analyze each domain
-    print("  Analyzing data model...")
-    data_model = analyze_data_model(fields_index, to_index, relationships_index)
+    _status("data_model", "start", label="Analyzing data model...")
+    t = time.monotonic()
+    data_model = analyze_data_model(
+        fields_index, to_index, relationships_index,
+        solution_name=solution_name,
+        multi_file_info=multi_file if multi_file.get("is_multi_file") else None,
+        correlated_data=correlated_data or None,
+        layouts_index=layouts_index,
+        layout_classification=layout_classification,
+    )
+    dt = round(time.monotonic() - t, 4)
+    phase_times["data_model"] = dt
+    _status("data_model", "end", elapsed=dt)
 
-    print("  Detecting naming conventions...")
+    _status("naming", "start", label="Detecting naming conventions...")
+    t = time.monotonic()
     conventions = detect_naming_conventions(fields_index)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["naming"] = dt
+    _status("naming", "end", elapsed=dt)
 
-    print("  Analyzing scripts...")
-    scripts = analyze_scripts(solution_name, scripts_index, deep=deep)
+    _status("scripts", "start", label="Analyzing scripts...")
+    t = time.monotonic()
+    scripts = analyze_scripts(solution_name, scripts_index, script_cache,
+                              deep=deep)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["scripts"] = dt
+    _status("scripts", "end", elapsed=dt, items=len(script_cache))
 
-    print("  Analyzing custom functions...")
+    _status("custom_functions", "start", label="Analyzing custom functions...")
+    t = time.monotonic()
     custom_functions = analyze_custom_functions(solution_name)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["custom_functions"] = dt
+    _status("custom_functions", "end", elapsed=dt,
+            items=custom_functions.get("total", 0))
 
-    print("  Analyzing layouts...")
-    layouts = analyze_layouts(solution_name, solution_dir, layouts_index, scripts_index)
+    _status("layouts", "start", label="Analyzing layouts...")
+    t = time.monotonic()
+    layouts = analyze_layouts(solution_name, solution_dir, layouts_index,
+                              scripts_index, script_cache=script_cache)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["layouts"] = dt
+    _status("layouts", "end", elapsed=dt, items=layouts["total"])
 
-    print("  Analyzing integrations...")
-    integrations = analyze_integrations(solution_name, value_lists_index, scripts_index)
+    _status("integrations", "start", label="Analyzing integrations...")
+    t = time.monotonic()
+    integrations = analyze_integrations(solution_name, value_lists_index,
+                                        scripts_index,
+                                        script_cache=script_cache)
+    dt = round(time.monotonic() - t, 4)
+    phase_times["integrations"] = dt
+    _status("integrations", "end", elapsed=dt)
 
-    print("  Detecting multi-file references...")
-    multi_file = detect_multi_file(solution_name)
-
-    print("  Computing health metrics...")
+    _status("health", "start", label="Computing health metrics...")
+    t = time.monotonic()
     health = analyze_health(
         solution_dir, fields_index, scripts_index, layouts_index,
-        relationships_index, to_index,
+        relationships_index, to_index, script_cache=script_cache,
     )
+    dt = round(time.monotonic() - t, 4)
+    phase_times["health"] = dt
+    _status("health", "end", elapsed=dt)
+
+    # Per-file relationship graphs (multi-file solutions)
+    per_file_graphs = {}
+    if multi_file.get("is_multi_file") and correlated_data:
+        _status("per_file_graphs", "start",
+                label="Building per-file relationship graphs...")
+        t = time.monotonic()
+        per_file_graphs = build_per_file_graphs(
+            solution_name, fields_index, to_index, relationships_index,
+            multi_file, correlated_data,
+        )
+        dt = round(time.monotonic() - t, 4)
+        phase_times["per_file_graphs"] = dt
+        _status("per_file_graphs", "end", elapsed=dt,
+                items=len(per_file_graphs))
 
     # Extension availability
     extensions_used = [
@@ -1314,13 +2531,14 @@ def build_profile(solution_name, deep=False):
         "naming_conventions": conventions,
         "business_logic": scripts,
         "custom_functions": custom_functions,
-        "ui_layer": layouts,
+        "ui_layer": {**layouts, "layout_purpose": layout_classification},
         "integrations": integrations,
         "multi_file": multi_file,
+        "per_file_graphs": per_file_graphs,
         "health": health,
     }
 
-    print(f"\n==> Analysis complete.")
+    _status("complete", "complete", phases=phase_times)
     return profile
 
 
@@ -1405,8 +2623,15 @@ def format_markdown(profile):
     # Tables
     lines.append("### Base Tables")
     lines.append("")
-    lines.append("| Table | Fields | PK | FKs | Primary Types |")
-    lines.append("|-------|--------|----|-----|---------------|")
+    has_multi_sources = len(set(
+        t.get("source_file", sol) for t in dm["tables"].values()
+    )) > 1
+    if has_multi_sources:
+        lines.append("| Table | Source | Fields | PK | FKs | Primary Types |")
+        lines.append("|-------|--------|--------|----|-----|---------------|")
+    else:
+        lines.append("| Table | Fields | PK | FKs | Primary Types |")
+        lines.append("|-------|--------|----|-----|---------------|")
     for tname, t in sorted(dm["tables"].items()):
         pk = "Yes" if t["has_primary_key"] else "No"
         top_types = ", ".join(
@@ -1414,9 +2639,15 @@ def format_markdown(profile):
                 t["by_datatype"].items(), key=lambda x: x[1], reverse=True
             )[:3]
         )
-        lines.append(
-            f"| {tname} | {t['field_count']} | {pk} | {t['foreign_key_count']} | {top_types} |"
-        )
+        if has_multi_sources:
+            src = t.get("source_file", sol)
+            lines.append(
+                f"| {tname} | {src} | {t['field_count']} | {pk} | {t['foreign_key_count']} | {top_types} |"
+            )
+        else:
+            lines.append(
+                f"| {tname} | {t['field_count']} | {pk} | {t['foreign_key_count']} | {top_types} |"
+            )
     lines.append("")
 
     # Topology
@@ -1453,22 +2684,80 @@ def format_markdown(profile):
     # ERD (Mermaid) — collapse TOs to base tables and draw edges
     lines.append("### Entity Relationship Diagram")
     lines.append("")
-    lines.append("```mermaid")
-    lines.append("erDiagram")
-    for tname, t in dm["tables"].items():
-        field_count = t["field_count"]
-        lines.append(f'    {_mermaid_safe(tname)} {{')
-        lines.append(f'        int fields "{field_count} fields"')
-        lines.append(f'    }}')
 
-    # Add relationship lines collapsed to base tables
-    for edge in dm.get("base_table_edges", []):
-        left_safe = _mermaid_safe(edge[0])
-        right_safe = _mermaid_safe(edge[1])
-        lines.append(f'    {left_safe} ||--o{{ {right_safe} : ""')
+    # Use multi-file ERD only when tables actually come from multiple source files
+    source_files = set(
+        t.get("source_file", sol) for t in dm["tables"].values()
+    )
+    use_multi_erd = len(source_files) > 1
+    if use_multi_erd:
+        # Use flowchart with subgraphs to show file ownership
+        lines.append("```mermaid")
+        lines.append("flowchart LR")
 
-    lines.append("```")
-    lines.append("")
+        # Group tables by source_file
+        tables_by_source = collections.defaultdict(list)
+        for tname, t in dm["tables"].items():
+            src = t.get("source_file", sol)
+            tables_by_source[src].append(tname)
+
+        # Determine role labels for subgraph titles
+        file_roles = {}
+        for f in profile.get("multi_file", {}).get("files", []):
+            role = f.get("role", "")
+            label = {"ui": "UI", "data": "Data", "primary": "Primary",
+                     "secondary": "Secondary"}.get(role, "")
+            file_roles[f["name"]] = label
+
+        for src_file, tnames in sorted(tables_by_source.items()):
+            safe_src = _mermaid_safe(src_file)
+            role_label = file_roles.get(src_file, "")
+            title = f"{src_file} ({role_label})" if role_label else src_file
+            lines.append(f'    subgraph {safe_src}["{title}"]')
+            for tname in sorted(tnames):
+                safe_name = _mermaid_safe(tname)
+                fc = dm["tables"][tname]["field_count"]
+                lines.append(f'        {safe_name}["{tname}<br/>{fc} fields"]')
+            lines.append("    end")
+
+        # Add edges — dashed for cross-file, solid for same-file
+        for edge in dm.get("base_table_edges", []):
+            left_safe = _mermaid_safe(edge["left"])
+            right_safe = _mermaid_safe(edge["right"])
+            if edge.get("cross_file"):
+                lines.append(f'    {left_safe} -.- {right_safe}')
+            else:
+                lines.append(f'    {left_safe} --- {right_safe}')
+
+        # Style the subgraphs
+        for i, src_file in enumerate(sorted(tables_by_source.keys())):
+            safe_src = _mermaid_safe(src_file)
+            if src_file == sol:
+                lines.append(f'    style {safe_src} fill:#1e3a5f,stroke:#6c8cff,color:#e1e4ed')
+            else:
+                lines.append(f'    style {safe_src} fill:#3d2a0f,stroke:#fb923c,color:#e1e4ed')
+
+        lines.append("```")
+        lines.append("")
+    else:
+        # Single-file or no external tables: use erDiagram
+        lines.append("```mermaid")
+        lines.append("erDiagram")
+        for tname, t in dm["tables"].items():
+            if t.get("is_external"):
+                continue  # skip correlated tables in single-file mode
+            field_count = t["field_count"]
+            lines.append(f'    {_mermaid_safe(tname)} {{')
+            lines.append(f'        int fields "{field_count} fields"')
+            lines.append(f'    }}')
+
+        for edge in dm.get("base_table_edges", []):
+            left_safe = _mermaid_safe(edge["left"])
+            right_safe = _mermaid_safe(edge["right"])
+            lines.append(f'    {left_safe} ||--o{{ {right_safe} : ""')
+
+        lines.append("```")
+        lines.append("")
 
     # --- Naming Conventions ---
     conv = profile["naming_conventions"]
@@ -1674,13 +2963,51 @@ def format_markdown(profile):
 
     # --- Multi-file ---
     mf = profile["multi_file"]
-    if mf["is_multi_file"]:
-        lines.append("## Multi-File Solution")
+    if mf.get("is_multi_file"):
+        arch = mf.get("file_architecture", "multi_file")
+        arch_labels = {
+            "data_separation": "Data Separation Model (UI + Data)",
+            "multi_file": "Multi-File",
+            "single": "Single File",
+        }
+        lines.append("## Multi-File Architecture")
         lines.append("")
-        lines.append(f"- **Referenced files:** {', '.join(mf['referenced_files'])}")
-        if mf["correlated_solutions"]:
-            lines.append(f"- **Correlated (also exploded):** {', '.join(mf['correlated_solutions'])}")
+        lines.append(f"**Pattern:** {arch_labels.get(arch, arch)}")
         lines.append("")
+
+        # Per-file summary table
+        if mf.get("files"):
+            lines.append("| File | Role | Local Tables | TOs (Local / External) |")
+            lines.append("|------|------|-------------|------------------------|")
+            for f in mf["files"]:
+                role = f.get("role", "").capitalize()
+                ltc = f.get("local_table_count", 0)
+                loc_to = f.get("local_to_count", 0)
+                ext_to = f.get("external_to_count", 0)
+                lines.append(f"| {f['name']} | {role} | {ltc} | {loc_to} / {ext_to} |")
+            lines.append("")
+
+        # Table ownership
+        dm_section = profile.get("data_model", {})
+        local_t = dm_section.get("local_tables", [])
+        ext_t = dm_section.get("external_tables", {})
+        if local_t:
+            lines.append(f"**{sol} (local):** {', '.join(local_t)}")
+            lines.append("")
+        for ds_name, tables_list in sorted(ext_t.items()):
+            corr_name = mf.get("data_source_map", {}).get(ds_name, ds_name)
+            lines.append(f"**{corr_name} (via {ds_name}):** {', '.join(tables_list)}")
+            lines.append("")
+
+        # Data sources
+        if mf.get("data_sources"):
+            lines.append("### External Data Sources")
+            lines.append("")
+            lines.append("| Name | Type | Path |")
+            lines.append("|------|------|------|")
+            for ds in mf["data_sources"]:
+                lines.append(f"| {ds['name']} | {ds['type']} | `{ds['path']}` |")
+            lines.append("")
 
     # --- Health ---
     health = profile["health"]
@@ -1756,8 +3083,8 @@ def main():
         help="Solution name (as it appears in agent/context/)",
     )
     parser.add_argument(
-        "--format", choices=["json", "markdown", "html"], default="json",
-        help="Output format (default: json)",
+        "--format", choices=["json", "markdown", "html", "all"], default="all",
+        help="Output format: json, markdown, html, or all (default: all)",
     )
     parser.add_argument(
         "--deep", action="store_true",
@@ -1772,11 +3099,25 @@ def main():
         help="Show available optional dependencies and exit",
     )
     parser.add_argument(
+        "--status-json", action="store_true",
+        help="Emit structured JSONL status to stderr (for agent consumption)",
+    )
+    parser.add_argument(
+        "--correlated", nargs="*", default=None,
+        help="Correlated solution names for multi-file analysis. "
+             "Pass with no args to auto-detect, or name solutions explicitly.",
+    )
+    parser.add_argument(
         "-o", "--output",
-        help="Output path override",
+        help="Output path override (single-format modes only)",
     )
 
     args = parser.parse_args()
+
+    # Enable structured status output
+    global _STATUS_JSON
+    if args.status_json:
+        _STATUS_JSON = True
 
     if args.list_extensions:
         print("Optional extensions for analyze.py:")
@@ -1811,43 +3152,53 @@ def main():
             print("  All prerequisites present.")
 
     # Build profile
-    profile = build_profile(args.solution, deep=args.deep)
+    # --correlated with no args (empty list) means auto-detect (same as None)
+    correlated = args.correlated if args.correlated else None
+    profile = build_profile(args.solution, deep=args.deep,
+                            correlated_solutions=correlated)
 
     # Determine output path — deliverables go to sandbox
     sandbox_dir = PROJECT_ROOT / "agent" / "sandbox"
     sandbox_dir.mkdir(parents=True, exist_ok=True)
 
+    # Determine which formats to write
     if args.output:
-        output_path = Path(args.output)
-    elif args.format == "markdown":
-        output_path = sandbox_dir / f"{args.solution} - solution-profile.md"
-    elif args.format == "html":
-        output_path = sandbox_dir / f"{args.solution} - solution-profile.html"
+        # Single output path override — use the requested format (or json)
+        formats_to_write = [args.format if args.format != "all" else "json"]
+    elif args.format == "all":
+        formats_to_write = ["json", "markdown", "html"]
     else:
-        output_path = sandbox_dir / f"{args.solution} - solution-profile.json"
+        formats_to_write = [args.format]
+        # Always include JSON alongside markdown/html
+        if args.format in ("markdown", "html") and "json" not in formats_to_write:
+            formats_to_write.append("json")
 
-    # Write output
-    if args.format == "markdown":
-        content = format_markdown(profile)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"  Markdown: {output_path}")
-    elif args.format == "html":
-        content = format_html(profile)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"  HTML: {output_path}")
-    else:
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(profile, f, indent=2, ensure_ascii=False)
-        print(f"  JSON: {output_path}")
+    base_name = f"{args.solution} - solution-profile"
 
-    # Also write JSON when markdown/html is requested (profile is always useful)
-    if args.format in ("markdown", "html"):
-        json_path = sandbox_dir / f"{args.solution} - solution-profile.json"
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(profile, f, indent=2, ensure_ascii=False)
-        print(f"  JSON: {json_path}")
+    for fmt in formats_to_write:
+        if args.output and fmt == formats_to_write[0]:
+            output_path = Path(args.output)
+        elif fmt == "markdown":
+            output_path = sandbox_dir / f"{base_name}.md"
+        elif fmt == "html":
+            output_path = sandbox_dir / f"{base_name}.html"
+        else:
+            output_path = sandbox_dir / f"{base_name}.json"
+
+        if fmt == "markdown":
+            content = format_markdown(profile)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"  Markdown: {output_path}")
+        elif fmt == "html":
+            content = format_html(profile)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"  HTML: {output_path}")
+        else:
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(profile, f, indent=2, ensure_ascii=False)
+            print(f"  JSON: {output_path}")
 
 
 if __name__ == "__main__":

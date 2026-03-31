@@ -363,6 +363,13 @@ class KnownStepName(LintRule):
             name = ln.step_name
             if name == "# (comment)":
                 continue
+            # All FM step names start with an uppercase letter.  Lines that
+            # survive multiline merge but begin with lowercase are text
+            # fragments (embedded JS/CSS/HTML), not real steps — skip them
+            # to avoid false positives.  Matches the TypeScript linter's
+            # filtering behaviour.
+            if not name[0].isupper():
+                continue
             if not catalog.has_step(name):
                 diags.append(Diagnostic(
                     rule_id=self.rule_id,

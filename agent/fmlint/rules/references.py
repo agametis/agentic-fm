@@ -12,6 +12,40 @@ from ..types import Diagnostic, Severity
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _extract_layout_name_from_hr(ln):
+    """Extract layout name from an HR Go to Layout line's bracket content."""
+    content = ln.bracket_content or ""
+    if not content:
+        return None
+    # HR format: Go to Layout [ "Layout Name" (TableOccurrence) ]
+    # or: Go to Layout [ "Layout Name" ]
+    stripped = content.strip().strip('"').strip("'")
+    # Remove table occurrence suffix if present
+    paren_pos = stripped.find(" (")
+    if paren_pos > 0:
+        stripped = stripped[:paren_pos]
+    stripped = stripped.strip('"').strip("'")
+    return stripped if stripped else None
+
+
+def _extract_layout_name_from_xml(step):
+    """Extract layout name from an XML Go to Layout step element."""
+    for layout_el in step.iter("Layout"):
+        name = layout_el.get("name", "")
+        if name:
+            return name
+    return None
+
+
+def _is_go_to_layout(step_name):
+    """Check if a step name is a Go to Layout variant."""
+    return step_name in ("Go to Layout", "Go to Related Record")
+
+
+# ---------------------------------------------------------------------------
 # R001 — field-exists
 # ---------------------------------------------------------------------------
 
@@ -35,6 +69,16 @@ class FieldExists(LintRule):
         sev = self.severity(config)
         diags = []
         for idx, step in enumerate(parse_result.steps):
+            step_name = step.get("name", "")
+
+            # After a Go to Layout that changes context, field references
+            # are no longer reliably validatable — CONTEXT.json is scoped
+            # to a single layout.  R009 reports the scope change.
+            if _is_go_to_layout(step_name):
+                layout_name = _extract_layout_name_from_xml(step)
+                if layout_name and context.layout_name and layout_name != context.layout_name:
+                    break
+
             for field_el in step.iter("Field"):
                 table = field_el.get("table", "")
                 name = field_el.get("name", "")
@@ -51,6 +95,12 @@ class FieldExists(LintRule):
         sev = self.severity(config)
         diags = []
         for ln in lines:
+            # After a Go to Layout that changes context, stop field checking
+            if ln.step_name and _is_go_to_layout(ln.step_name):
+                layout_name = _extract_layout_name_from_hr(ln)
+                if layout_name and context.layout_name and layout_name != context.layout_name:
+                    break
+
             content = ln.bracket_content or ""
             if not content:
                 continue
@@ -175,7 +225,7 @@ class LayoutExists(LintRule):
             if ln.step_name != "Go to Layout":
                 continue
             # Extract layout name from params or bracket_content
-            layout_name = self._extract_layout_name(ln)
+            layout_name = _extract_layout_name_from_hr(ln)
             if layout_name and layout_name not in context.layouts:
                 diags.append(Diagnostic(
                     rule_id=self.rule_id,
@@ -185,22 +235,6 @@ class LayoutExists(LintRule):
                 ))
 
         return diags
-
-    def _extract_layout_name(self, ln):
-        """Extract layout name from HR line bracket content."""
-        content = ln.bracket_content or ""
-        if not content:
-            return None
-        # HR format: Go to Layout [ "Layout Name" (TableOccurrence) ]
-        # or: Go to Layout [ "Layout Name" ]
-        stripped = content.strip().strip('"').strip("'")
-        # Remove table occurrence suffix if present
-        paren_pos = stripped.find(" (")
-        if paren_pos > 0:
-            stripped = stripped[:paren_pos]
-        # Remove surrounding quotes
-        stripped = stripped.strip('"').strip("'")
-        return stripped if stripped else None
 
 
 # ---------------------------------------------------------------------------
@@ -478,11 +512,10 @@ class ContextStaleness(LintRule):
 
 @rule
 class ScopeMismatch(LintRule):
-    """References that exist in index files but not in CONTEXT.json scope.
-
-    Stub — returns empty for now. Can be enhanced later to cross-reference
-    index files and flag references that are valid in the solution but
-    outside the current CONTEXT.json scope.
+    """Detect when a script navigates to a layout outside the current
+    CONTEXT.json scope.  Field-reference rules (R001, R007) stop
+    validating after this point because CONTEXT.json is layout-scoped
+    and can no longer confirm whether references are valid.
     """
 
     rule_id = "R009"
@@ -493,7 +526,56 @@ class ScopeMismatch(LintRule):
     tier = 2
 
     def check_xml(self, parse_result, catalog, context, config):
-        return []
+        if not context.available or not parse_result.ok or not context.layout_name:
+            return []
+
+        sev = self.severity(config)
+        diags = []
+        for idx, step in enumerate(parse_result.steps):
+            step_name = step.get("name", "")
+            if not _is_go_to_layout(step_name):
+                continue
+            layout_name = _extract_layout_name_from_xml(step)
+            if layout_name and layout_name != context.layout_name:
+                diags.append(Diagnostic(
+                    rule_id=self.rule_id,
+                    severity=sev,
+                    message=(
+                        f'Go to Layout navigates to "{layout_name}" but '
+                        f'CONTEXT.json is scoped to "{context.layout_name}". '
+                        f"Field references after this point cannot be validated."
+                    ),
+                    line=idx + 1,
+                    fix_hint=(
+                        "Run Push Context on the target layout if you need "
+                        "field validation for references after this navigation."
+                    ),
+                ))
+        return diags
 
     def check_hr(self, lines, catalog, context, config):
-        return []
+        if not context.available or not context.layout_name:
+            return []
+
+        sev = self.severity(config)
+        diags = []
+        for ln in lines:
+            if not ln.step_name or not _is_go_to_layout(ln.step_name):
+                continue
+            layout_name = _extract_layout_name_from_hr(ln)
+            if layout_name and layout_name != context.layout_name:
+                diags.append(Diagnostic(
+                    rule_id=self.rule_id,
+                    severity=sev,
+                    message=(
+                        f'Go to Layout navigates to "{layout_name}" but '
+                        f'CONTEXT.json is scoped to "{context.layout_name}". '
+                        f"Field references after this point cannot be validated."
+                    ),
+                    line=ln.line_number,
+                    fix_hint=(
+                        "Run Push Context on the target layout if you need "
+                        "field validation for references after this navigation."
+                    ),
+                ))
+        return diags

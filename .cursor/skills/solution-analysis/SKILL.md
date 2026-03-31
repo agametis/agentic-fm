@@ -19,10 +19,10 @@ This skill produces a comprehensive profile of a FileMaker solution by running `
 Pure Python analysis that reads pre-indexed data and produces structured output:
 
 ```bash
-python3 agent/scripts/analyze.py -s "Solution Name"                          # JSON profile
-python3 agent/scripts/analyze.py -s "Solution Name" --format markdown        # Markdown spec
-python3 agent/scripts/analyze.py -s "Solution Name" --deep                   # Full script analysis
-python3 agent/scripts/analyze.py -s "Solution Name" --ensure-prerequisites   # Build xref + layout summaries first
+python3 agent/scripts/analyze.py -s "SolutionApp"                          # JSON profile
+python3 agent/scripts/analyze.py -s "SolutionApp" --format markdown        # Markdown spec
+python3 agent/scripts/analyze.py -s "SolutionApp" --deep                   # Full script analysis
+python3 agent/scripts/analyze.py -s "SolutionApp" --ensure-prerequisites   # Build xref + layout summaries first
 python3 agent/scripts/analyze.py --list-extensions                           # Show optional deps
 ```
 
@@ -50,12 +50,14 @@ python3 agent/scripts/analyze.py -s "{solution}" --ensure-prerequisites
 ```
 
 This:
+
 - Builds `xref.index` (via `trace.py build`) if missing
 - Builds layout summaries (via `layout_to_summary.py`) if missing
 - Analyzes all six index files, sanitized scripts, custom functions, and layout summaries
 - Writes `agent/sandbox/{solution} - solution-profile.json`
 
 For deep analysis (when the developer requests it or the solution is small enough):
+
 ```bash
 python3 agent/scripts/analyze.py -s "{solution}" --ensure-prerequisites --deep
 ```
@@ -64,17 +66,17 @@ python3 agent/scripts/analyze.py -s "{solution}" --ensure-prerequisites --deep
 
 Read `agent/sandbox/{solution} - solution-profile.json`. The profile contains these sections:
 
-| Section | Key | What it contains |
-|---------|-----|-----------------|
-| Summary | `summary` | Top-level counts (tables, fields, scripts, layouts, etc.) |
-| Data Model | `data_model` | Tables with field breakdowns, TO groups, relationship summary, topology analysis |
-| Naming | `naming_conventions` | Detected prefix patterns and case styles |
-| Business Logic | `business_logic` | Script folders, call graph, entry points, utility scripts, clusters, line counts |
-| Custom Functions | `custom_functions` | Function inventory, categories, dependency chains |
-| UI Layer | `ui_layer` | Layout inventory, classifications, portal usage, orphaned layouts |
-| Integrations | `integrations` | External data sources, value lists, external script calls |
-| Multi-file | `multi_file` | Cross-file references and correlated solutions |
-| Health | `health` | Dead objects, disconnected tables, empty scripts |
+| Section          | Key                  | What it contains                                                                 |
+| ---------------- | -------------------- | -------------------------------------------------------------------------------- |
+| Summary          | `summary`            | Top-level counts (tables, fields, scripts, layouts, etc.)                        |
+| Data Model       | `data_model`         | Tables with field breakdowns, TO groups, relationship summary, topology analysis |
+| Naming           | `naming_conventions` | Detected prefix patterns and case styles                                         |
+| Business Logic   | `business_logic`     | Script folders, call graph, entry points, utility scripts, clusters, line counts |
+| Custom Functions | `custom_functions`   | Function inventory, categories, dependency chains                                |
+| UI Layer         | `ui_layer`           | Layout inventory, classifications, portal usage, orphaned layouts                |
+| Integrations     | `integrations`       | External data sources, value lists, external script calls                        |
+| Multi-file       | `multi_file`         | Cross-file references and correlated solutions                                   |
+| Health           | `health`             | Dead objects, disconnected tables, empty scripts                                 |
 
 ### Step 4: Produce the narrative
 
@@ -111,11 +113,13 @@ python3 agent/scripts/analyze.py --list-extensions
 ```
 
 If the developer wants extended analysis, guide them to install:
+
 ```bash
 pip3 install -r .cursor/skills/solution-analysis/assets/requirements-analyze.txt
 ```
 
 Extended features include:
+
 - **networkx**: Anchor-buoy topology detection with confidence scores, script community detection, cycle detection, bridge relationship identification
 - **pandas**: Statistical profiling, outlier detection, table health scorecards
 - **matplotlib**: Embedded visualizations in the markdown report
@@ -130,4 +134,53 @@ Extended features include:
 
 ## Multi-file solutions
 
-When a FileMaker solution spans multiple files (e.g., UI file + data file), the profile's `multi_file` section identifies cross-file references. If correlated solutions exist in `xml_parsed/`, suggest running analysis on each file separately and then comparing the profiles.
+When a FileMaker solution uses a data separation model (UI file + data file) or references other FM files, the analysis automatically detects and incorporates cross-file relationships into a single unified profile.
+
+### How it works
+
+1. `detect_multi_file()` parses `external_data_sources/` XML to find referenced files
+2. If correlated solutions exist in `agent/context/` (both files have been exploded and indexed via `fmcontext.sh`), the analysis loads both solutions' index data
+3. Table occurrences are classified as Local or External using the enriched `table_occurrences.index` (columns: `TOName|TOID|BaseTableName|BaseTableID|Type|DataSource`)
+4. External TOs are mapped to correlated solutions via base table overlap matching
+5. The unified profile shows all tables with their `source_file` attribution
+
+### Workflow
+
+```bash
+# Standard analysis — auto-detects correlated files
+python3 agent/scripts/analyze.py -s "SolutionApp" --ensure-prerequisites
+
+# Explicitly name correlated solutions
+python3 agent/scripts/analyze.py -s "SolutionApp" --correlated SolutionData
+```
+
+### Profile enrichments for multi-file
+
+The JSON profile includes these additional fields when multi-file is detected:
+
+- `multi_file.file_architecture`: `"data_separation"`, `"multi_file"`, or `"single"`
+- `multi_file.data_source_map`: Maps external data source names to correlated SolutionApps (e.g., `{"Data": "SolutionData"}`)
+- `multi_file.files`: Array with per-file summary (name, role, local table count, TO counts)
+- `data_model.tables[*].source_file`: Which FM file owns each base table
+- `data_model.tables[*].is_external`: `true` for tables from correlated solutions
+- `data_model.base_table_edges[*].cross_file`: Whether a relationship crosses file boundaries
+- `data_model.local_tables` / `data_model.external_tables`: Tables grouped by ownership
+- `data_model.to_classification`: Breakdown of Local vs External TOs by data source
+
+### Output format differences
+
+**HTML**: The relationship graph colors nodes by source file (blue = local, orange = data file). Cross-file edges use dashed orange lines. A legend shows the file-to-color mapping. The tables DataTable includes a "Source" column.
+
+**Markdown**: The ERD uses a Mermaid `flowchart` with `subgraph` blocks per file (instead of `erDiagram`). Cross-file edges are dashed. A "Multi-File Architecture" section shows the pattern, per-file summary table, and table ownership.
+
+**JSON**: All enrichments above are machine-readable for agent consumption.
+
+### Narrative guidance
+
+When describing a data separation model solution:
+
+- Lead with the architecture pattern: "This is a data separation model with X as the UI file and Y as the data file"
+- Note which tables are local UI/utility tables vs core domain tables stored in the data file
+- Highlight that most table occurrences in the UI file are external references
+- The true ERD (entity relationships between domain tables) lives in the data file
+- The UI file's relationship graph primarily connects external TOs for layout/portal purposes

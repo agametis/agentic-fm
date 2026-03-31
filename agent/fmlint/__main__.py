@@ -191,6 +191,12 @@ def main():
     if args.tier is not None:
         config.max_tier = args.tier
 
+    # Report config validation warnings
+    if config.config_warnings and args.format == "text":
+        print("Config warnings:", file=sys.stderr)
+        for w in config.config_warnings:
+            print(f"  - {w}", file=sys.stderr)
+
     # Build runner
     catalog_path = Path(args.catalog) if args.catalog else None
     context_path = Path(args.context) if args.context else None

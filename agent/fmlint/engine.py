@@ -17,17 +17,29 @@ from .formats.hr_parser import parse_hr
 # ---------------------------------------------------------------------------
 
 _registry = []
+_registered_ids = set()
 
 
 def rule(cls):
-    """Decorator to register a lint rule class."""
-    _registry.append(cls)
+    """Decorator to register a lint rule class.
+
+    Guards against duplicate registration (e.g. module re-import).
+    """
+    if cls.rule_id not in _registered_ids:
+        _registry.append(cls)
+        _registered_ids.add(cls.rule_id)
     return cls
 
 
 def get_rules():
     """Return all registered rule classes."""
     return list(_registry)
+
+
+def clear_registry():
+    """Reset the rule registry. Primarily useful for test isolation."""
+    _registry.clear()
+    _registered_ids.clear()
 
 
 # ---------------------------------------------------------------------------

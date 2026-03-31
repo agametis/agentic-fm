@@ -151,4 +151,136 @@ const c001Rule: LintRule = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// C002 — Unbalanced parentheses
+// ---------------------------------------------------------------------------
+
+/** Strip quoted strings so paren counting isn't confused by parens inside strings. */
+function stripStrings(text: string): string {
+  return text.replace(/"[^"]*"/g, '""');
+}
+
+const c002Rule: LintRule = {
+  ruleId: 'C002',
+  name: 'Unbalanced parentheses',
+  severity: 'error',
+
+  check(lines: string[], _catalog: Set<string>, config: LintConfig): Diagnostic[] {
+    if (!isRuleEnabled('C002', config)) return [];
+    const sev = getRuleSeverity('C002', 'error', config);
+    const diagnostics: Diagnostic[] = [];
+
+    const merged = mergeMultilineStatements(lines);
+
+    for (const { text, lineNumber } of merged) {
+      const trimmed = text.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const stepName = extractStepName(text);
+      if (NON_CALC_STEPS.has(stepName)) continue;
+
+      const bracketContent = extractBracketContent(text);
+      if (!bracketContent) continue;
+
+      const stripped = stripStrings(bracketContent);
+      let depth = 0;
+      let message: string | null = null;
+
+      for (const ch of stripped) {
+        if (ch === '(') depth++;
+        if (ch === ')') depth--;
+        if (depth < 0) {
+          message = "Extra closing parenthesis ')' in calculation";
+          break;
+        }
+      }
+
+      if (!message && depth > 0) {
+        message = `Unclosed parenthesis in calculation (${depth} unclosed)`;
+      }
+
+      if (message) {
+        diagnostics.push({
+          ruleId: 'C002',
+          severity: sev,
+          message,
+          line: lineNumber,
+          column: 1,
+          endLine: lineNumber,
+          endColumn: lines[lineNumber - 1]?.length + 1 || 1,
+        });
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// C006 — HTML entities in calculations
+// ---------------------------------------------------------------------------
+
+/** Entities that represent operators — never valid in FM calculations. */
+const ENTITY_MAP: Record<string, string> = {
+  '&gt;': '>',
+  '&lt;': '<',
+  '&ge;': '>=',
+  '&le;': '<=',
+  '&amp;': '&',
+  '&quot;': '"',
+  '&apos;': "'",
+  '&ne;': '<>',
+};
+
+const ENTITY_RE = new RegExp(
+  Object.keys(ENTITY_MAP).map(e => e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+  'gi',
+);
+
+const c006Rule: LintRule = {
+  ruleId: 'C006',
+  name: 'HTML entities in calculations',
+  severity: 'error',
+
+  check(lines: string[], _catalog: Set<string>, config: LintConfig): Diagnostic[] {
+    if (!isRuleEnabled('C006', config)) return [];
+    const sev = getRuleSeverity('C006', 'error', config);
+    const diagnostics: Diagnostic[] = [];
+
+    const merged = mergeMultilineStatements(lines);
+
+    for (const { text, lineNumber } of merged) {
+      const trimmed = text.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const stepName = extractStepName(text);
+      if (NON_CALC_STEPS.has(stepName)) continue;
+
+      const bracketContent = extractBracketContent(text);
+      if (!bracketContent) continue;
+
+      const stripped = stripStrings(bracketContent);
+      let match: RegExpExecArray | null;
+      ENTITY_RE.lastIndex = 0;
+      while ((match = ENTITY_RE.exec(stripped)) !== null) {
+        const entity = match[0].toLowerCase();
+        const replacement = ENTITY_MAP[entity] || '';
+        diagnostics.push({
+          ruleId: 'C006',
+          severity: sev,
+          message: `HTML entity "${match[0]}" in calculation — use the literal operator "${replacement}" instead`,
+          line: lineNumber,
+          column: 1,
+          endLine: lineNumber,
+          endColumn: lines[lineNumber - 1]?.length + 1 || 1,
+        });
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
 registerRule(c001Rule);
+registerRule(c002Rule);
+registerRule(c006Rule);

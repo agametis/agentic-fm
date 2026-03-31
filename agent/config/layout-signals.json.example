@@ -1,0 +1,12 @@
+{
+  "_comment": "Default layout classification signals. Copy to layout-signals.json to override.",
+  "_docs": "See .cursor/skills/solution-analysis/references/layout-classifications.md",
+  "developer_prefixes": ["@"],
+  "utility_prefixes": ["blank ", "json ", "api "],
+  "utility_names": ["vlist"],
+  "output_suffixes": ["pdf"],
+  "output_names": [],
+  "output_patterns": ["print", "report", "pdf"],
+  "ignore_names": [],
+  "dual_purpose_button_threshold": 10
+}

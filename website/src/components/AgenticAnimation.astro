@@ -1,0 +1,299 @@
+---
+/**
+ * Self-contained agentic-fm logo animation.
+ * Drop into any page: <AgenticAnimation />
+ * Click to replay. Respects dark/light mode.
+ */
+---
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap" rel="stylesheet" />
+
+<div class="afm-animation" data-afm-animation>
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden;">
+    <defs>
+      <clipPath id="afm-folderClip" clipPathUnits="userSpaceOnUse">
+        <path transform="translate(1,-3) translate(32.5,65) scale(1.18) translate(-32.5,-65)" d="M9,63 C11,63.6666667 12,63 12,61 C12.6666667,50.3333333 14.3333333,42 17,36 C18,34 20,34 20,34 L55,26 C57,25.3333333 58.3333333,25.3333333 59,26 C60,27 56,37 55,40 C54,43 53,51 53,52 C53,52.6666667 57,78.3333333 65,129 L0,129 C5.33333333,85 8.33333333,63 9,63 Z"/>
+      </clipPath>
+    </defs>
+  </svg>
+
+  <div class="afm-stage" data-afm-stage>
+    <div class="afm-cabinet" data-afm-cabinet>🗄️</div>
+
+    <div class="afm-clip-zone afm-clip-back" data-afm-clip-back>
+      <div class="afm-folder" data-afm-folder-back>📂</div>
+    </div>
+
+    <div class="afm-clip-zone afm-clip-assembly" data-afm-clip-assembly>
+      <div class="afm-folder-assembly" data-afm-folder-assembly>
+        <div class="afm-brain" data-afm-brain>🧠</div>
+        <div class="afm-folder afm-folder-front" data-afm-folder-front>📂</div>
+      </div>
+    </div>
+
+    <div class="afm-text" data-afm-text>agentic-fm</div>
+    <div class="afm-glow" data-afm-glow></div>
+  </div>
+</div>
+
+<style>
+  .afm-animation {
+    width: 150px;
+    height: 250px;
+    cursor: pointer;
+  }
+
+  .afm-stage {
+    position: relative;
+    width: 150px;
+    height: 250px;
+  }
+
+  .afm-cabinet {
+    position: absolute;
+    font-size: 96px;
+    line-height: 1;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    opacity: 0;
+  }
+
+  .afm-clip-zone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 210px;
+    overflow: hidden;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .afm-clip-back { z-index: 2; }
+  .afm-clip-assembly { z-index: 3; }
+
+  .afm-folder {
+    font-size: 65px;
+    line-height: 1;
+    width: 65px;
+    height: 65px;
+  }
+
+  [data-afm-folder-back] {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .afm-folder-assembly {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 65px;
+  }
+
+  .afm-brain {
+    position: absolute;
+    font-size: 42px;
+    line-height: 1;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    white-space: nowrap;
+    opacity: 0;
+  }
+
+  .afm-folder-front {
+    position: relative;
+    z-index: 2;
+    clip-path: url(#afm-folderClip);
+  }
+
+  .afm-text {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14pt;
+    font-weight: 700;
+    text-transform: lowercase;
+    color: transparent;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .afm-glow {
+    position: absolute;
+    border-radius: 50%;
+    width: 100px;
+    height: 100px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(
+      circle,
+      rgba(167, 139, 250, 0.39) 0%,
+      rgba(139, 92, 246, 0.21) 35%,
+      transparent 70%
+    );
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0;
+  }
+</style>
+
+<script>
+  (function () {
+    const STAGE_H = 250;
+    const CABINET_BOTTOM = -5;
+    const DRAWER_OFFSET = 45;
+    const FOLDER_SIZE = 65;
+    const BRAIN_SIZE = 42;
+    const CLIP_H = STAGE_H - CABINET_BOTTOM - DRAWER_OFFSET;
+    const TOTAL_S = 7.0;
+
+    const T = {
+      cabinetStart: 0, cabinetEnd: 2,
+      folderStart: 2.5, folderEnd: 4.3,
+      brainStart: 5.0, brainEnd: 6.8,
+      glowEnd: 7.0,
+    };
+
+    function clamp01(t) { return Math.max(0, Math.min(1, t)); }
+    function unlerp(a, b, t) { return clamp01((t - a) / (b - a)); }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function smoothstep(t) { t = clamp01(t); return t * t * (3 - 2 * t); }
+    function easeInOutCubic(t) {
+      t = clamp01(t);
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    function isDark() {
+      return document.documentElement.classList.contains('dark');
+    }
+
+    // Only show on Apple platforms (macOS, iOS, iPadOS)
+    const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ||
+      (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+    const root = document.querySelector('[data-afm-animation]');
+    if (!isApple) { root.style.display = 'none'; return; }
+    const el = (sel) => root.querySelector(`[data-afm-${sel}]`);
+
+    let L = null;
+
+    function initLayout() {
+      const stage = el('stage');
+      const cabinet = el('cabinet');
+      // Temporarily show cabinet for measurement
+      cabinet.style.opacity = '1';
+      const sr = stage.getBoundingClientRect();
+      const cr = cabinet.getBoundingClientRect();
+      cabinet.style.opacity = '0';
+
+      const cabinetTop = cr.top - sr.top;
+      const folderStart = CLIP_H + 20;
+      const folderStop = cabinetTop - FOLDER_SIZE - 5;
+      const brainFromAssembly = 14;
+      const brainToAssembly = -BRAIN_SIZE;
+      L = { folderStart, folderStop, brainFromAssembly, brainToAssembly };
+    }
+
+    function scrub(t) {
+      if (!L) return;
+
+      // Cabinet
+      el('cabinet').style.opacity = String(smoothstep(unlerp(T.cabinetStart, T.cabinetEnd, t)));
+
+      // Folder
+      const fp = easeInOutCubic(unlerp(T.folderStart, T.folderEnd, t));
+      const folderTop = lerp(L.folderStart, L.folderStop, fp);
+      const folderVis = t >= T.folderStart ? 'visible' : 'hidden';
+      el('clip-back').style.visibility = folderVis;
+      el('clip-assembly').style.visibility = folderVis;
+      el('folder-back').style.top = folderTop + 'px';
+      el('folder-assembly').style.top = folderTop + 'px';
+
+      // Brain
+      const bp = easeInOutCubic(unlerp(T.brainStart, T.brainEnd, t));
+      const brainAssemblyY = lerp(L.brainFromAssembly, L.brainToAssembly, bp);
+      el('brain').style.top = brainAssemblyY + 'px';
+      el('brain').style.opacity = String(smoothstep(unlerp(20, 15, brainAssemblyY)));
+
+      // Brain glow
+      const gp = smoothstep(unlerp(T.brainStart, T.glowEnd, t));
+      const brainStageY = folderTop + brainAssemblyY + BRAIN_SIZE / 2;
+      const glow = el('glow');
+      glow.style.top = brainStageY + 'px';
+      glow.style.opacity = String(gp * (isDark() ? 1 : 0.45));
+
+      // Title flicker
+      const dark = isDark();
+      const textEl = el('text');
+      if (t < T.cabinetEnd) {
+        textEl.style.color = 'transparent';
+      } else {
+        const textProgress = unlerp(T.cabinetEnd, T.brainEnd, t);
+        if (textProgress >= 1) {
+          textEl.style.color = dark ? '#ffffff' : '#18181b';
+        } else {
+          const frame = Math.floor(t * 12);
+          const rand = Math.abs(Math.sin(frame * 79.3 + 31.7) * Math.cos(frame * 53.1 + 19.4));
+          const base = dark
+            ? lerp(0.12, 0.82, smoothstep(textProgress))
+            : lerp(0.88, 0.18, smoothstep(textProgress));
+          const amp = lerp(0.55, 0.12, textProgress);
+          const v = Math.round(clamp01(base + (rand - 0.5) * amp * 2) * 255);
+          textEl.style.color = `rgb(${v},${v},${v})`;
+        }
+      }
+    }
+
+    let playing = false;
+    let currentT = 0;
+    let lastTS = null;
+    let rafId = null;
+
+    function tick(timestamp) {
+      if (!playing) return;
+      if (lastTS === null) lastTS = timestamp;
+      const dt = (timestamp - lastTS) / 1000;
+      lastTS = timestamp;
+      currentT = Math.min(currentT + dt, TOTAL_S);
+      scrub(currentT);
+      if (currentT < TOTAL_S) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        playing = false;
+      }
+    }
+
+    function startPlay() {
+      if (currentT >= TOTAL_S) currentT = 0;
+      playing = true;
+      lastTS = null;
+      rafId = requestAnimationFrame(tick);
+    }
+
+    // Click to replay
+    root.addEventListener('click', () => {
+      if (playing) { playing = false; cancelAnimationFrame(rafId); }
+      currentT = 0;
+      scrub(0);
+      startPlay();
+    });
+
+    // Theme toggle — re-apply current frame
+    new MutationObserver(() => scrub(currentT)).observe(
+      document.documentElement, { attributes: true, attributeFilter: ['class'] }
+    );
+
+    // Init
+    initLayout();
+    scrub(0);
+    setTimeout(startPlay, 300);
+  })();
+</script>

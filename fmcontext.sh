@@ -331,7 +331,7 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
     # 5. table_occurrences.index
     # ---------------------------------------------------------------------------
     {
-        echo "# TOName|TOID|BaseTableName|BaseTableID"
+        echo "# TOName|TOID|BaseTableName|BaseTableID|Type|DataSource"
 
         if [[ -d "$XML_PARSED_DIR/table_occurrences/$SOLUTION" ]]; then
         find "$XML_PARSED_DIR/table_occurrences/$SOLUTION" -name '*.xml' -type f 2>/dev/null | sort | while IFS= read -r file; do
@@ -339,8 +339,10 @@ for SOLUTION in "${SOLUTIONS[@]}"; do
             to_id=$(xval 'string(/TableOccurrence/@id)' "$file")
             base_table=$(xval 'string(//BaseTableReference/@name)' "$file")
             base_table_id=$(xval 'string(//BaseTableReference/@id)' "$file")
+            to_type=$(xval 'string(/TableOccurrence/@type)' "$file")
+            data_source=$(xval 'string(/TableOccurrence/BaseTableSourceReference/DataSourceReference/@name)' "$file")
 
-            echo "${to_name}|${to_id}|${base_table}|${base_table_id}"
+            echo "${to_name}|${to_id}|${base_table}|${base_table_id}|${to_type}|${data_source}"
         done
         fi
     } > "$SOLUTION_CONTEXT_DIR/table_occurrences.index"

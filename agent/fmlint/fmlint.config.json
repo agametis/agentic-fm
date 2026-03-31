@@ -107,8 +107,7 @@
 
     "B001": {
       "enabled": true,
-      "severity": "warning",
-      "lookahead_steps": 10
+      "severity": "info"
     },
 
     "B002": {
@@ -140,6 +139,8 @@
       "severity": "warning",
       "extra_known_functions": []
     },
+
+    "C006": { "enabled": true, "severity": "error" },
 
     "C004": {
       "enabled": true,
