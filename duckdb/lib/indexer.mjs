@@ -107,6 +107,35 @@ const scriptFocusedXmlDomains = [
   "scripts_sanitized",
 ];
 
+const allXmlDomains = [
+  "_",
+  "accounts",
+  "base_directory",
+  "custom_function_calcs",
+  "custom_function_stubs",
+  "custom_functions",
+  "custom_menu_sets",
+  "custom_menus",
+  "extended_privileges",
+  "external_data_sources",
+  "file_access",
+  "layouts",
+  "layouts__modify_action",
+  "libraries",
+  "privilege_sets",
+  "relationships",
+  "script_stubs",
+  "scripts",
+  "scripts_sanitized",
+  "table_occurrences",
+  "table_stubs",
+  "tables",
+  "tables__modify_action",
+  "themes",
+  "value_list_stubs",
+  "value_lists",
+];
+
 async function xmlRootsForMode(mode, solutionName) {
   if (!solutionName) {
     return [sourcePaths.xmlParsed];
@@ -118,20 +147,11 @@ async function xmlRootsForMode(mode, solutionName) {
     );
   }
 
-  let entries;
-  try {
-    entries = await fs.readdir(sourcePaths.xmlParsed, { withFileTypes: true });
-  } catch (error) {
-    if (error && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
-
+  // xml mode means all XML domains (no docs); only scripts mode is script-focused.
   // agent/xml_parsed stays domain-first (<domain>/<solution>/...), unlike agent/context.
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(sourcePaths.xmlParsed, entry.name, solutionName));
+  return allXmlDomains.map((domain) =>
+    path.join(sourcePaths.xmlParsed, domain, solutionName),
+  );
 }
 
 async function collectCandidateFiles(mode, solutionName) {
