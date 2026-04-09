@@ -97,14 +97,54 @@ async function walkFiles(rootPath, out) {
   }
 }
 
-async function collectCandidateFiles(mode) {
+const scriptFocusedXmlDomains = [
+  "_",
+  "custom_menu_sets",
+  "custom_menus",
+  "layouts",
+  "script_stubs",
+  "scripts",
+  "scripts_sanitized",
+];
+
+async function xmlRootsForMode(mode, solutionName) {
+  if (!solutionName) {
+    return [sourcePaths.xmlParsed];
+  }
+
+  if (mode === "scripts") {
+    return scriptFocusedXmlDomains.map((domain) =>
+      path.join(sourcePaths.xmlParsed, domain, solutionName),
+    );
+  }
+
+  let entries;
+  try {
+    entries = await fs.readdir(sourcePaths.xmlParsed, { withFileTypes: true });
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  // agent/xml_parsed stays domain-first (<domain>/<solution>/...), unlike agent/context.
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(sourcePaths.xmlParsed, entry.name, solutionName));
+}
+
+async function collectCandidateFiles(mode, solutionName) {
   const files = [];
 
-  const wantsXml = mode === 'full' || mode === 'xml' || mode === 'scripts';
-  const wantsDocs = mode === 'full' || mode === 'docs';
+  const wantsXml = mode === "full" || mode === "xml" || mode === "scripts";
+  const wantsDocs = mode === "full" || mode === "docs";
 
   if (wantsXml) {
-    await walkFiles(sourcePaths.xmlParsed, files);
+    const xmlRoots = await xmlRootsForMode(mode, solutionName);
+    for (const rootPath of xmlRoots) {
+      await walkFiles(rootPath, files);
+    }
   }
   if (wantsDocs) {
     await walkFiles(sourcePaths.docsFilemaker, files);
@@ -113,24 +153,17 @@ async function collectCandidateFiles(mode) {
 
   return files.filter((filePath) => {
     const ext = path.extname(filePath).toLowerCase();
-    if (!['.xml', '.txt', '.md'].includes(ext)) {
+    if (![".xml", ".txt", ".md"].includes(ext)) {
       return false;
     }
 
-    const unixPath = toUnixPath(filePath);
+    const unixPath = normalizedProjectPath(filePath);
 
-    if (mode === 'scripts') {
+    if (mode === "scripts") {
       return isScriptFocusedXmlPath(unixPath);
     }
 
-    if (mode === 'docs') {
-      return (
-        unixPath.includes('/agent/docs/filemaker/') ||
-        unixPath.includes('/agent/docs/mbs/functions/')
-      );
-    }
-
-    if (unixPath.includes('/agent/docs/mbs/functions/')) {
+    if (unixPath.includes("/agent/docs/mbs/functions/")) {
       const base = path.basename(filePath).toLowerCase();
       if (noisyMbsBasenames.has(base) || /^newinversion.*\.md$/i.test(base)) {
         return false;
@@ -901,7 +934,7 @@ async function commitGroupFromStaging(db, solutionName, sourceGroup) {
 }
 
 export async function detectStaleness(db, solutionName, mode = 'full') {
-  const files = await collectCandidateFiles(mode);
+  const files = await collectCandidateFiles(mode, solutionName);
   const dbRows = await allSql(
     db,
     `SELECT path, size, mtime_ms FROM sources WHERE solution_name = ${sqlStringLiteral(solutionName)}`
@@ -911,17 +944,17 @@ export async function detectStaleness(db, solutionName, mode = 'full') {
 
   let changed = 0;
   for (const filePath of files) {
-    const stat = await fs.stat(filePath);
     const rel = path.relative(process.cwd(), filePath);
-    const key = rel.startsWith('..') ? filePath : rel;
+    const key = rel.startsWith("..") ? filePath : rel;
     const existing = dbMap.get(key);
     if (!existing) {
       changed += 1;
       continue;
     }
     if (
-      Number(existing.size) !== Number(stat.size) ||
-      Number(existing.mtime_ms) !== Math.trunc(Number(stat.mtimeMs))
+      Number(existing.size) !== Number((await fs.stat(filePath)).size) ||
+      Number(existing.mtime_ms) !==
+        Math.trunc(Number((await fs.stat(filePath)).mtimeMs))
     ) {
       changed += 1;
     }
@@ -953,7 +986,7 @@ export async function refreshIndex({
   const startedAt = Date.now();
   const indexedAt = nowIso();
 
-  const files = await collectCandidateFiles(mode);
+  const files = await collectCandidateFiles(mode, solutionName);
   const existingRows = await allSql(
     db,
     `SELECT path, hash FROM sources WHERE solution_name = ${sqlStringLiteral(solutionName)}`

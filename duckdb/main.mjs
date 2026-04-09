@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs/promises";
 import path from 'node:path';
 import process from 'node:process';
 
@@ -9,7 +10,7 @@ import {
   startSessionDaemon,
   stopSessionDaemon,
 } from './lib/session.mjs';
-import { sourcePaths } from './lib/paths.mjs';
+import { agentRoot, sourcePaths } from "./lib/paths.mjs";
 import { safeJsonStringify } from './lib/utils.mjs';
 
 function parseArgs(argv) {
@@ -76,11 +77,24 @@ function parseArgs(argv) {
 
 async function detectSolutionName() {
   try {
-    const fs = await import('node:fs/promises');
-    const scriptsDir = path.join(sourcePaths.xmlParsed, 'scripts_sanitized');
+    const raw = await fs.readFile(path.join(agentRoot, "CONTEXT.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    const solution = String(parsed?.solution ?? "").trim();
+    if (solution) {
+      return solution;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const scriptsDir = path.join(sourcePaths.xmlParsed, "scripts_sanitized");
     const entries = await fs.readdir(scriptsDir, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
-    if (dirs.length > 0) {
+    const dirs = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+    if (dirs.length === 1) {
       return dirs[0];
     }
   } catch {
@@ -284,6 +298,15 @@ function output(value, asJson, context = {}, options = {}) {
 async function ensureSession({ mainScriptPath, solutionName }) {
   const state = await readSessionState();
   if (state) {
+    if (
+      solutionName &&
+      state.solution_name &&
+      state.solution_name !== solutionName
+    ) {
+      throw new Error(
+        `DuckDB session is already running for solution '${state.solution_name}'. Stop it before using '${solutionName}'.`,
+      );
+    }
     const session = await rpcCall('status');
     return { session, initialized: false };
   }

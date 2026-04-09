@@ -156,14 +156,25 @@ export async function startSessionDaemon({ mainScriptPath, solutionName, mode = 
 
   if (existing) {
     try {
-      const status = await rpcCall('status');
-      if (solutionName && existing.solution_name && existing.solution_name !== solutionName) {
+      const status = await rpcCall("status");
+      if (
+        solutionName &&
+        existing.solution_name &&
+        existing.solution_name !== solutionName
+      ) {
         throw new Error(
-          `DuckDB session is already running for solution '${existing.solution_name}'. Stop it before starting '${solutionName}'.`
+          `DuckDB session is already running for solution '${existing.solution_name}'. Stop it before starting '${solutionName}'.`,
         );
       }
       return status;
-    } catch {
+    } catch (error) {
+      if (
+        solutionName &&
+        existing.solution_name &&
+        existing.solution_name !== solutionName
+      ) {
+        throw error;
+      }
       await removePathIfExists(sessionStatePath);
       await removePathIfExists(existing.rpc_root || sessionRpcRoot);
     }
@@ -239,6 +250,7 @@ async function handleCommand({ db, solutionName, lock, state, command, args }) {
 
   if (command === 'status') {
     const activeMode = state.mode || 'full';
+    const staleness = await detectStaleness(db, solutionName, activeMode);
     return {
       ready: state.ready,
       run_id: state.run_id,
@@ -247,8 +259,9 @@ async function handleCommand({ db, solutionName, lock, state, command, args }) {
       mode: activeMode,
       started_at: state.started_at,
       cache_action: state.cache_action,
-      stale: null,
-      estimated_changes: null,
+      stale: staleness.stale,
+      estimated_changes: staleness.estimated_changes,
+      files_discovered: staleness.files_discovered,
       last_refresh: state.last_refresh,
       last_refresh_status: state.last_refresh_status,
       last_refresh_lock_wait_ms: state.last_refresh_lock_wait_ms ?? 0,

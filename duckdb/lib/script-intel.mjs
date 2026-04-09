@@ -47,7 +47,27 @@ function nullableNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function readCurrentContextHints() {
+async function readContextIndexFile(solutionName, fileName) {
+  const candidates = [];
+  if (solutionName) {
+    candidates.push(path.join(contextRoot, solutionName, fileName));
+  }
+  candidates.push(path.join(contextRoot, fileName));
+
+  for (const candidate of candidates) {
+    try {
+      return await fs.readFile(candidate, "utf8");
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function readCurrentContextHints(solutionName) {
   const hints = {
     currentLayoutName: null,
     currentBaseTo: null,
@@ -58,7 +78,7 @@ async function readCurrentContextHints() {
   };
 
   try {
-    const raw = await fs.readFile(path.join(agentRoot, 'CONTEXT.json'), 'utf8');
+    const raw = await fs.readFile(path.join(agentRoot, "CONTEXT.json"), "utf8");
     const parsed = JSON.parse(raw);
     const layout = parsed?.current_layout ?? {};
 
@@ -74,7 +94,10 @@ async function readCurrentContextHints() {
   }
 
   try {
-    const raw = await fs.readFile(path.join(contextRoot, 'layouts.index'), 'utf8');
+    const raw = await readContextIndexFile(solutionName, "layouts.index");
+    if (!raw) {
+      return hints;
+    }
     const lines = raw.split(/\r?\n/).filter(Boolean);
 
     if (!hints.currentLayoutName) {
@@ -82,8 +105,8 @@ async function readCurrentContextHints() {
     }
 
     for (const line of lines) {
-      if (line.startsWith('#')) continue;
-      const parts = line.split('|');
+      if (line.startsWith("#")) continue;
+      const parts = line.split("|");
       if (parts.length < 4) continue;
       const layoutName = parts[0];
       const baseToName = parts[2];
@@ -103,19 +126,25 @@ async function readCurrentContextHints() {
   }
 
   try {
-    const raw = await fs.readFile(path.join(contextRoot, 'table_occurrences.index'), 'utf8');
+    const raw = await readContextIndexFile(
+      solutionName,
+      "table_occurrences.index",
+    );
+    if (!raw) {
+      return hints;
+    }
     const lines = raw.split(/\r?\n/).filter(Boolean);
     const byName = new Map();
     const byId = new Map();
     const tosByBaseTable = new Map();
 
     for (const line of lines) {
-      if (line.startsWith('#')) continue;
-      const parts = line.split('|');
+      if (line.startsWith("#")) continue;
+      const parts = line.split("|");
       if (parts.length < 4) continue;
-      const toName = String(parts[0] || '').trim();
+      const toName = String(parts[0] || "").trim();
       const toId = Number.parseInt(parts[1], 10);
-      const baseTableName = String(parts[2] || '').trim();
+      const baseTableName = String(parts[2] || "").trim();
       const baseTableId = Number.parseInt(parts[3], 10);
       if (!toName) continue;
 
@@ -148,7 +177,9 @@ async function readCurrentContextHints() {
     if (match?.baseTableName) {
       hints.currentBaseTable = match.baseTableName;
       hints.currentBaseTableId = match.baseTableId;
-      hints.currentBaseTableTOs = [...(tosByBaseTable.get(normalize(match.baseTableName)) || new Set())];
+      hints.currentBaseTableTOs = [
+        ...(tosByBaseTable.get(normalize(match.baseTableName)) || new Set()),
+      ];
     }
   } catch {
     // Optional index file.
@@ -263,7 +294,7 @@ export async function resolveScript({ db, solutionName, target }) {
     return { match: null, alternates: [], context: null };
   }
 
-  const contextHints = await readCurrentContextHints();
+  const contextHints = await readCurrentContextHints(solutionName);
   const usageSignals = await scriptUsageSignals(
     db,
     solutionName,
