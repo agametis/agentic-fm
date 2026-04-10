@@ -7,7 +7,7 @@ Define the default AI retrieval behavior for this repository so that compare/che
 ## Core Rule
 
 - For repository questions, script intelligence, comparisons, and validation checks, query DuckDB first.
-- Use `agent/context/*.index` and `agent/CONTEXT.json` for ID mapping and context tie-breaks.
+- Use `agent/context/<solution>/*.index` and `agent/CONTEXT.json` for ID mapping and context tie-breaks.
 - Use raw `agent/xml_parsed` files only when DuckDB/context cannot answer sufficiently.
 
 ## DuckDB-First Commands
@@ -20,8 +20,11 @@ Define the default AI retrieval behavior for this repository so that compare/che
 Session behavior:
 
 - Ensure session status first: `npm run duckdb:session:status`
+- By default, DuckDB uses `agent/CONTEXT.json.solution` when available.
 - If not running: `npm run duckdb:session:start`
+- `session:status` reports `stale` / `estimated_changes` for the active solution and mode.
 - If stale or data changed: `npm run duckdb:session:refresh`
+- If you need to switch to a different solution, stop the current DuckDB session first.
 
 ## Compare/Check Contract
 

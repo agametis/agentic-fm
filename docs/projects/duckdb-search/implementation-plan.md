@@ -6,7 +6,7 @@ Use DuckDB as a fast searchable index over project data, with no external DuckDB
 
 Target searchable sources:
 
-- `agent/xml_parsed` (dynamic)
+- `agent/xml_parsed/<domain>/<solution>/...` (dynamic, solution-scoped XML)
 - `agent/docs/filemaker` (mostly stable)
 - `agent/docs/mbs` (mostly stable, noisy generic pages excluded)
 
@@ -29,7 +29,7 @@ Important boundary:
 
 ## Current Findings
 
-- Current fast lookup already exists via `agent/context/*.index` from `fmcontext.sh`.
+- Current fast lookup already exists via `agent/context/<solution>/*.index` from `fmcontext.sh`.
 - Root `package.json` is now present and configured as ESM tooling.
 - The MBS docs tree includes many generic pages that should be excluded from ranking/indexing.
 - `scripts_sanitized` is high-value for script logic summaries.
@@ -119,8 +119,8 @@ Important boundary:
 - Script names are expected to be unique, but duplicate-name scenarios must be handled context-aware.
 - Context-aware disambiguation should leverage existing project context sources:
   - `agent/CONTEXT.json` (current layout + base TO context)
-  - `agent/context/layouts.index`
-  - `agent/context/table_occurrences.index`
+  - `agent/context/<solution>/layouts.index`
+  - `agent/context/<solution>/table_occurrences.index`
   - source-derived usage links in DB (`script_usages`)
 - Confidence thresholds remain at default bands.
 - Low-confidence/unresolved edges remain included by default and are explicitly grouped/labeled.
@@ -157,14 +157,14 @@ Important boundary:
 ### Section 7: Command UX + Output Contract (Locked)
 
 - Global flags (all commands):
-  - `--solution <name>` (required unless auto-detected)
+  - `--solution <name>` (optional when auto-detected from `agent/CONTEXT.json.solution`)
   - `--json` (optional machine-readable output)
   - `--verbose` (detailed progress)
   - `--quiet` (errors only)
 - Session lifecycle defaults:
   - `duckdb:session:start` loads cache into in-memory DB and performs staleness check.
   - `duckdb:session:refresh` runs incremental refresh (`--mode <full|scripts|docs|xml>`, default `full`).
-  - `duckdb:session:status` returns health/run metadata.
+  - `duckdb:session:status` returns health/run metadata plus staleness for the active solution and mode.
   - `duckdb:session:stop` cleanly closes the in-memory session.
   - exit code `0` for success and `completed_with_errors`.
   - exit code `1` for hard failure.
@@ -292,7 +292,7 @@ No external CLI tools and no separate daemon binary are required.
 ### Global Flags
 
 - `--solution <name>`
-  - required unless auto-detected from indexed XML metadata.
+  - optional when auto-detected from `agent/CONTEXT.json.solution`.
 - `--json`
   - returns structured output; default remains human-readable.
 - `--verbose`
@@ -313,6 +313,7 @@ Default behavior:
     - `--mode <full|scripts|docs|xml>` (default `full`)
 - `duckdb:session:status`
   - reports whether a session is active and returns run metadata.
+  - includes `stale` / `estimated_changes` for the active solution and mode.
 - `duckdb:session:stop`
   - closes the active in-memory session.
 
@@ -461,8 +462,8 @@ Low-confidence handling (default):
 ## Source Coverage
 
 - XML dynamic:
-  - `agent/xml_parsed/**/*.xml`
-  - `agent/xml_parsed/scripts_sanitized/**/*.txt`
+  - `agent/xml_parsed/<domain>/<solution>/**/*.xml`
+  - `agent/xml_parsed/scripts_sanitized/<solution>/**/*.txt`
   - with targeted parsing from:
     - `script_stubs`
     - `scripts`
@@ -495,7 +496,7 @@ Low-confidence handling (default):
 - If name is ambiguous, resolve using context in this order:
   1. active context from `agent/CONTEXT.json` (layout/base TO)
   2. matching usage containers from `script_usages` (`layout_trigger`, `button_action`, etc.)
-  3. layout/TO mappings from `agent/context/*.index`
+  3. layout/TO mappings from `agent/context/<solution>/*.index`
   4. remaining tie: return top candidate + alternates, marked ambiguous
 - Return:
   - purpose (from leading comments when present)
