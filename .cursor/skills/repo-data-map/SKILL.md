@@ -33,7 +33,7 @@ Apply this order unless the user explicitly requests otherwise:
 1. `agent/CONTEXT.json`
 - Task-scoped, layout-scoped truth for current work.
 
-2. `agent/context/*.index`
+2. `agent/context/<solution>/*.index`
 - Compact solution-wide ID/name/reference lookups.
 
 3. DuckDB index
@@ -45,13 +45,13 @@ Apply this order unless the user explicitly requests otherwise:
 Special case for compare/check requests:
 
 1. DuckDB index first (collect evidence fast across all domains).
-2. `agent/CONTEXT.json` and `agent/context/*.index` second (ID/context tie-break and mapping).
+2. `agent/CONTEXT.json` and `agent/context/<solution>/*.index` second (ID/context tie-break and mapping).
 3. Raw XML fallback only for unresolved gaps.
 
 ## Deterministic Rules
 
 1. If the question is task-scoped ("for this layout/current task"), start at `CONTEXT.json`.
-2. If the question is exact ID/name mapping, use `agent/context/*.index`.
+2. If the question is exact ID/name mapping, use `agent/context/<solution>/*.index`.
 3. If the question needs broad or cross-domain retrieval, use DuckDB first.
 4. If a required fact is still missing, fall back to targeted raw XML reads.
 5. If the user asks to compare or verify, produce at least two DuckDB-backed evidence points before using raw XML.
@@ -62,6 +62,8 @@ For script logic/relationship questions:
 
 1. Use DuckDB script commands first:
 - Ensure DuckDB session first (`duckdb:session:status`, then `duckdb:session:start` if needed, `duckdb:session:refresh` if stale).
+- By default, DuckDB uses `agent/CONTEXT.json.solution` when available.
+- If you need to switch solutions, stop the current DuckDB session first.
 - `script-explain`
 - `script-where-used`
 - `script-calls`

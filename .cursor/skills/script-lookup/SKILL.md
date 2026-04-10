@@ -47,8 +47,11 @@ Use this skill for script-targeting requests such as:
 
 2. Ensure DuckDB session availability:
 - run `npm run duckdb:session:status`.
+- by default, DuckDB uses `agent/CONTEXT.json.solution` when available.
 - if no active session exists, run `npm run duckdb:session:start`.
+- `session:status` reports `stale` / `estimated_changes` for the active solution and mode.
 - if staleness is detected, run `npm run duckdb:session:refresh`.
+- if you need to switch solutions, stop the current DuckDB session first.
 
 3. Resolve script via DuckDB first:
 - ID match first
@@ -57,8 +60,8 @@ Use this skill for script-targeting requests such as:
 
 4. Resolve ambiguity using context:
 - `agent/CONTEXT.json`
-- `agent/context/layouts.index`
-- `agent/context/table_occurrences.index`
+- `agent/context/<solution>/layouts.index`
+- `agent/context/<solution>/table_occurrences.index`
 - usage/call information from DuckDB results
 
 5. Locate editable/reference files:

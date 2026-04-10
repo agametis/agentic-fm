@@ -30,7 +30,7 @@ Reference:
 3. Default output is human-readable.
 4. Use script ID over script name whenever an ID is available.
 5. If script name resolution is ambiguous, include alternates and confidence context.
-6. Use raw `agent/xml_parsed` only as fallback after DuckDB and `agent/context/*.index`.
+6. Use raw `agent/xml_parsed` only as fallback after DuckDB and `agent/context/<solution>/*.index`.
 7. For compare/check/audit requests, DuckDB must be the first retrieval layer for evidence collection.
 
 ## Deterministic Workflow
@@ -44,8 +44,11 @@ Reference:
 
 2. Ensure session availability:
 - Check active session with `npm run duckdb:session:status`.
+- By default, DuckDB uses `agent/CONTEXT.json.solution` when available.
 - If no active session exists, start one with `npm run duckdb:session:start`.
+- `session:status` reports `stale` / `estimated_changes` for the active solution and mode.
 - If staleness is reported, run `npm run duckdb:session:refresh`.
+- If you need to switch solutions, stop the current DuckDB session first.
 - Do not run full refresh unless needed.
 
 3. Execute query command:
@@ -71,8 +74,8 @@ Compare/check pattern:
 - Prefer script ID over script name.
 - For ambiguous names, apply tie-break using:
   - `agent/CONTEXT.json`
-  - `agent/context/layouts.index`
-  - `agent/context/table_occurrences.index`
+  - `agent/context/<solution>/layouts.index`
+  - `agent/context/<solution>/table_occurrences.index`
   - usage links from query results
 - If unresolved, return best candidate + alternates + confidence notes.
 
@@ -88,7 +91,7 @@ Compare/check pattern:
 ## Retrieval Order
 
 1. DuckDB index first (primary).
-2. `agent/context/*.index` second for exact ID checks.
+2. `agent/context/<solution>/*.index` second for exact ID checks.
 3. Raw `agent/xml_parsed` fallback only when index/context cannot answer.
 
 ## Fallback Behavior
@@ -96,5 +99,5 @@ Compare/check pattern:
 If DuckDB commands are unavailable or fail hard:
 
 1. State that DuckDB retrieval is unavailable.
-2. Fall back to `agent/context/*.index` and targeted XML/docs search.
+2. Fall back to `agent/context/<solution>/*.index` and targeted XML/docs search.
 3. Return results with a fallback note.
