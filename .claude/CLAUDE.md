@@ -43,6 +43,16 @@ If the result is greater than `0`, pause and notify the user before proceeding:
 
 Do this **once per session**, not on every prompt. If the check fails (no network, not a git repo, etc.), skip it silently and continue.
 
+## Environment detection
+
+Also at session start, check if you are running in a sandboxed or non-macOS environment:
+
+```bash
+uname -s 2>/dev/null; command -v osascript &>/dev/null && echo "OSASCRIPT" || echo "NO_OSASCRIPT"
+```
+
+If `uname` returns `Linux` or `osascript` is not found, read `agent/docs/SANDBOXED_ENVIRONMENT.md` before proceeding. That document covers setup paths, platform limitations, and the filesystem bridge workflow for sandboxed agents.
+
 # Local development context
 
 If `PROJECT.md` exists at the project root, read it at session start. It contains local-only context: meta-project notes, toolchain details, and `external_tools/` documentation. Its absence is normal — it is gitignored and will not be present in collaborator environments.
@@ -291,6 +301,7 @@ The `agent/library` folder is a curated collection of reusable fmxmlsnippet code
 - **Function reference**: `agent/docs/filemaker/functions/` — official FM function docs (not guaranteed present). Validate function names against this folder when writing calculations. Do not invent function names.
 - **Schema guidance**: `agent/docs/SCHEMA_GUIDANCE.md` — complete param type → XML mapping reference
 - **Documentation conventions**: When writing docs, use generic placeholder names (`SolutionApp`, `SolutionData`) instead of real solution names. Exception: when the context is explicitly about a specific solution.
+- **Sandboxed environments**: `agent/docs/SANDBOXED_ENVIRONMENT.md` — setup and operation guide for agents running in sandboxed, containerized, or virtualized environments (Codex, Claude Code, Docker, etc.). Read this if you detect you are not running natively on macOS.
 
 # Constraints
 
